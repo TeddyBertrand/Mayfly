@@ -43,3 +43,14 @@ Commit only when the owner asks.
 - **Description**: short, imperative, lowercase, no trailing period. Example: `feat(receiver): verify webhook signatures`.
 - **Split work into several commits, never one per feature.** Each commit is one logical part that builds on its own (for example: types and interfaces, then the implementation, then tests, then docs). Stage selectively (`git add -p` or specific paths) so each commit holds only its own part.
 - Before committing, propose the planned commit split and messages so the owner can adjust them.
+
+## 5. Issues and pull requests
+
+Every PR is linked to the issue it implements, and merging the PR closes that issue.
+
+- **Always link.** Put a closing keyword on its own line in the PR body: `Closes #<number>`. Use one keyword per issue (`Closes #12`, `Closes #13`), because `Closes #12, #13` only closes the first.
+- **Closing is automatic.** GitHub closes the issue when the PR is merged into the default branch (`main`). Never close issues by hand, and never merge a PR that is missing the link.
+- **No issue yet?** Create it first (or ask the owner), then link it. Work without an issue does not get a PR.
+- **Stacked PRs.** Closing keywords only fire for PRs targeting `main`. For a PR targeting another branch, still reference the issue (`Refs #<number>`), and put the `Closes` line on the PR that lands on `main`.
+- **Check after opening.** Confirm the issue shows the PR under "Development" (e.g. `gh pr view --json closingIssuesReferences`).
+- The PR body still carries no AI attribution (see section 4).
