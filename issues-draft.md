@@ -1,0 +1,231 @@
+# Mayfly: issue drafts
+
+Format: `## Milestone`, then one `###` per issue as `### [labels] Title`, followed by the body.
+Nothing here is on GitHub yet.
+
+## M0 - Foundations
+
+### [ci] Initialise Go module and repo layout
+Set up `go mod init`, a `cmd/` + `internal/` layout (receiver, provisioner, reaper as packages or binaries), `.gitignore`, LICENSE and a README stub.
+- [ ] `go build ./...` passes
+- [ ] Layout documented in the README stub
+
+### [ci] Add linting and formatting
+`golangci-lint` config, `gofmt` check, and a Makefile (or Taskfile) with `build`, `test`, `lint`.
+- [ ] `make lint test build` runs locally
+- [ ] Config committed
+
+### [ci] CI skeleton on GitHub-hosted runners
+Workflow that runs lint, test and build on push and PR. It stays on hosted runners until Mayfly can host its own CI (M6).
+- [ ] Workflow green on `main`
+- [ ] Go version pinned
+
+### [security] Create the GitHub App with least-privilege permissions
+Create the app and subscribe it to `workflow_job` events. Grant the minimum permissions needed to generate JIT configs (repository "Administration: write" or the org self-hosted runners permission). Generate the private key and webhook secret.
+- [ ] App created and installed on the demo repo only
+- [ ] Permissions and the reason for each documented in `docs/github-app.md`
+- [ ] Private key and secret kept out of git
+
+### [infra] Cloud account, budget alerts and dev host
+Create the Hetzner project, add a budget/cost alert, pick a small instance size for development, and set up an SSH key.
+- [ ] Budget alert active
+- [ ] Dev host reachable (or a documented decision to develop locally first)
+
+### [docs] Decide and record the Go conventions
+Short `docs/design-decisions.md` start: config via env vars, structured logging (`log/slog`), HTTP stack (`net/http`), the GitHub client library choice (`go-github` or raw REST).
+- [ ] First entries written
+
+## M1 - Core loop
+
+### [receiver] Webhook HTTP server skeleton
+`net/http` server with `/healthz` and `/webhook`, graceful shutdown, config from env.
+- [ ] Starts, serves `/healthz`, shuts down cleanly on SIGTERM
+
+### [receiver][security] Verify webhook signatures
+Validate `X-Hub-Signature-256` using HMAC-SHA256 with a constant-time compare. Reject missing or invalid signatures with 401 before parsing the body.
+- [ ] Table-driven tests: valid, invalid, missing, tampered body
+- [ ] Body size limit applied
+
+### [receiver] Parse `workflow_job` events and dedupe deliveries
+Parse the event types and handle only `queued` (others logged). Deduplicate on `X-GitHub-Delivery` (in-memory first, interface for a store later) so retries do not start two workers.
+- [ ] Same delivery twice starts one worker
+- [ ] Unknown events return 2xx and are ignored
+
+### [provisioner] GitHub API client with JIT config generation
+Authenticate as the GitHub App (JWT then installation token) and call `generate-jitconfig` with a unique runner name and the right labels.
+- [ ] Returns an encoded JIT config for a test repo
+- [ ] Token caching and expiry handled
+- [ ] Runner name includes the job ID for traceability
+
+### [worker] Ephemeral Docker worker running `actions/runner`
+Container image with the official runner. The provisioner starts it with the JIT config, it runs one job, then exits. The provisioner removes the container (`--rm` plus explicit cleanup).
+- [ ] Container is gone after the job finishes
+- [ ] Failed container start is logged with the job ID
+
+### [provisioner] Wire receiver to provisioner end to end
+On `queued`, call the provisioner and start the worker. Use a job queue (channel) between them so the webhook returns quickly (under 1s).
+- [ ] A `workflow_job` on the demo repo runs on a Mayfly worker
+- [ ] Webhook response does not wait on provisioning
+
+### [docs] Local dev guide with a tunnel
+Document how to run locally and receive webhooks (smee.io, cloudflared or ngrok).
+- [ ] Steps verified from a clean checkout
+
+## M2 - Reliability and one-command deploy
+
+### [reaper] Reaper for orphaned workers
+Periodic loop that lists workers (by label) and removes any that exceed a max age, or whose runner is offline on GitHub's side.
+- [ ] Killing the provisioner mid-job leaves no worker after one reaper cycle
+- [ ] Max age configurable
+
+### [reaper] Reaper for stuck jobs and stale runner registrations
+Detect jobs stuck in `queued` with no worker, and delete stale runner registrations through the API.
+- [ ] Stale registrations are removed
+- [ ] Stuck job triggers a retry or is logged with a reason
+
+### [provisioner] Retries and backoff
+Retry JIT config and container start with exponential backoff and jitter. Respect GitHub rate limits (`Retry-After`).
+- [ ] Injected failures in tests are retried and finally given up with a clear error
+
+### [provisioner] State handling for all `workflow_job` actions
+Handle `in_progress`, `completed` and cancelled: mark worker state, clean up on `completed`, and drop the pending worker if the job is cancelled before it starts.
+- [ ] A worker state machine is documented and tested
+
+### [provisioner] Concurrency cap and queueing
+Max concurrent workers from config. Excess jobs wait in a queue with a bounded size.
+- [ ] Cap enforced under a burst of 20 jobs
+
+### [infra] Terraform: host, network and firewall
+Provision the server, a firewall allowing only the webhook port and SSH from the user's IP, and a Docker network for workers with no route to internal resources.
+- [ ] `terraform apply` creates the host
+- [ ] Worker egress limited as documented
+
+### [infra] Terraform: bootstrap and secrets
+Cloud-init installs Docker and the Mayfly binary as a systemd service. Secrets (webhook secret, App key) are injected without being committed.
+- [ ] From a clean account, `terraform apply` yields a working system
+- [ ] `terraform destroy` removes everything
+
+## M3 - Observability and baseline
+
+### [observability] Prometheus metrics in the receiver, provisioner and reaper
+Expose `/metrics`: queue time, boot time, job duration, workers alive, jobs by result, retries, reaped workers.
+- [ ] Metrics documented with names and units
+
+### [observability] Prometheus and Grafana deployment
+Run both with Docker Compose or Terraform-managed config on the host.
+- [ ] Both come up with the system
+- [ ] Dashboard JSON provisioned from the repo
+
+### [observability] Grafana dashboard
+Panels: queue time, boot time, job duration, workers alive, failure rate. A cost-per-job panel is added in M6.
+- [ ] Dashboard shows live data from a test run
+
+### [bench] Demo repo with benchmark workflows
+Create a demo repo with realistic workflows (e.g. Go build and test, a Docker build, an npm install and test), all runnable on either hosted runners or Mayfly with one label change.
+- [ ] Workflows run on both runner types
+
+### [bench] Benchmark harness and methodology
+Script that triggers N runs, collects timings through the API (queue time, first-step time, total time), and outputs CSV plus a summary. Document warm-up, run count, and how medians are computed.
+- [ ] Methodology in `docs/benchmarks.md`
+- [ ] Re-running gives results within a stated variance
+
+### [bench] Baseline results
+Run the harness on GitHub-hosted runners and on unoptimized Mayfly. Record both in the benchmark table.
+- [ ] Table committed with date, host size and commit SHA
+
+## M4 - Optimization: startup
+
+### [worker] Pre-baked worker image
+Image with common toolchains (Go, Node, Python) and frequently used Docker images already pulled. Reproducible build, versioned tags.
+- [ ] Boot-to-first-step time measured before and after
+
+### [worker] Warm pool of pre-started workers
+Keep N idle workers registered and waiting, claim one per job, and refill in the background. Must respect the one-job-per-worker rule and security isolation.
+- [ ] Pool size configurable
+- [ ] A claimed worker is never reused
+
+### [provisioner] Pool sizing and scale-down
+Simple policy for pool size (fixed minimum plus burst) and idle timeout so the host is not wasting resources.
+- [ ] Idle workers are retired after the timeout
+
+### [observability] Pool metrics
+Add pool size, claim latency and pool-miss metrics to the dashboard.
+- [ ] Panels added
+
+### [bench] Benchmark: image and warm pool
+Run the harness for each step on its own and combined, and add rows to the table.
+- [ ] First step starts in under 10s (or the gap is explained)
+
+## M5 - Optimization: caching and disk
+
+### [infra] Local cache server for `actions/cache`
+Deploy a cache backend reachable only from workers. Account for the cache protocol version used by the current runner.
+- [ ] Cache hit demonstrated on the demo repo
+
+### [security] Cache isolation per repo and branch
+Scope cache keys by repo and branch (with a restricted fallback to the default branch) to prevent poisoning between repos or from PR branches.
+- [ ] A test shows a PR branch cannot write to the default-branch cache
+
+### [infra] Registry mirror
+Pull-through mirror for Docker Hub (and ghcr.io if useful) configured on the worker Docker daemon.
+- [ ] Image pull time measured before and after
+
+### [infra] Package mirror or proxy
+Go module proxy and npm/pip mirror (e.g. Athens or Verdaccio, or a caching proxy).
+- [ ] Dependency install time measured before and after
+
+### [worker] tmpfs for hot directories
+Mount `_work`, the Go build cache and `/tmp` on tmpfs, with a memory limit.
+- [ ] Measured gain and memory cost recorded
+
+### [bench] Benchmark: cache, mirror and tmpfs
+Update the table and compare against the 30-50% target versus hosted runners.
+- [ ] Final numbers for each optimization step
+
+## M6 - Hardening, docs and demo
+
+### [security] Threat model document
+`docs/threat-model.md`: assets, trust boundaries, threats (fork PRs, runner escape, cache poisoning, secrets exposure, webhook spoofing) and mitigations.
+- [ ] Each threat maps to a mitigation or an accepted risk
+
+### [security] Fork PR protection
+Enforce private repos or trusted PRs only. Ignore or refuse jobs from untrusted forks.
+- [ ] Test with a fork PR confirms no worker starts
+
+### [docs] Design decisions document
+Why Go, why JIT, why Docker first, why this cache design, and what was left out.
+- [ ] Reviewed for accuracy against the code
+
+### [observability] Cost-per-job panel
+Compute infrastructure cost divided by jobs run and show it on the dashboard.
+- [ ] Hourly price configurable
+
+### [bench] 24h soak test
+Run a steady stream of jobs for 24h and check for orphans, leaks and memory growth.
+- [ ] Zero orphaned workers at the end
+
+### [ci] Run this project's own CI on Mayfly
+Switch the project workflows to the Mayfly runner (keeping a hosted-runner fallback for the deploy job).
+- [ ] Recent runs visible on Mayfly runners
+
+### [docs] README with diagram, quick start and benchmark table
+- [ ] Quick start verified on a clean machine
+- [ ] Benchmark table with methodology link
+
+### [docs] Demo GIF or video (2 minutes)
+- [ ] Embedded in the README
+
+## M7 - Stretch: Firecracker
+
+### [stretch] Spike: run a job inside a Firecracker microVM
+Feasibility check on the host (KVM available, kernel, rootfs).
+- [ ] Go/no-go decision recorded
+
+### [stretch] Firecracker worker backend behind the worker interface
+- [ ] Backend selectable by config; jobs run in microVMs
+
+### [stretch] Snapshot and restore for fast boot
+- [ ] Restore time measured
+
+### [stretch] Benchmark against the Docker backend
+- [ ] Results added to the table and the design-decisions doc
