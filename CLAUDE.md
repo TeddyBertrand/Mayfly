@@ -43,3 +43,16 @@ Commit only when the owner asks.
 - **Description**: short, imperative, lowercase, no trailing period. Example: `feat(receiver): verify webhook signatures`.
 - **Split work into several commits, never one per feature.** Each commit is one logical part that builds on its own (for example: types and interfaces, then the implementation, then tests, then docs). Stage selectively (`git add -p` or specific paths) so each commit holds only its own part.
 - Before committing, propose the planned commit split and messages so the owner can adjust them.
+
+## 5. File editing
+
+- **Use the Write and Edit tools first** to create or change files. Do not write files through the shell with heredocs (`<< EOF`), `cat >`, `echo >`, `printf >` or `sed -i`.
+- Use Bash only for what it is meant for: running commands (build, test, git, `gh`), not for authoring file contents.
+
+## 6. Branch and PR workflow
+
+- `main` holds stable, released work. `dev` is the integration branch where all work lands first. Never commit directly to `main` or `dev`.
+- Each piece of work gets its own branch created from `dev`, named `<type>/<feature-name>` in lowercase kebab-case: `feat/`, `fix/`, `ci/`, `docs/`, `refacto/`. Example: `feat/webhook-signature-verification`.
+- The branch prefix follows the same types as commits. If none fits, ask the owner.
+- When the work is done, open a PR from the branch into `dev`. Merging `dev` into `main` is the owner's call.
+- Creating or pushing branches and opening PRs are outward-facing: propose the branch name first and wait for the owner's go-ahead.
