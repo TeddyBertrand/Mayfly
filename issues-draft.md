@@ -20,11 +20,11 @@ Workflow that runs lint, test and build on push and PR. It stays on hosted runne
 - [ ] Workflow green on `main`
 - [x] Go version pinned
 
-### [security] Create the GitHub App with least-privilege permissions
+### **done** [security] Create the GitHub App with least-privilege permissions (#4)
 Create the app and subscribe it to `workflow_job` events. Grant the minimum permissions needed to generate JIT configs (repository "Administration: write" or the org self-hosted runners permission). Generate the private key and webhook secret.
-- [ ] App created and installed on the demo repo only
-- [ ] Permissions and the reason for each documented in `docs/github-app.md`
-- [ ] Private key and secret kept out of git
+- [x] App created and installed on the demo repo only
+- [x] Permissions and the reason for each documented in `docs/github-app.md`
+- [x] Private key and secret kept out of git
 
 ### [infra] Cloud account, budget alerts and dev host
 Create the Hetzner project, add a budget/cost alert, pick a small instance size for development, and set up an SSH key.
