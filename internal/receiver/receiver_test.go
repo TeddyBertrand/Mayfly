@@ -1,6 +1,7 @@
 package receiver
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -27,16 +28,51 @@ func TestHandlerRoutes(t *testing.T) {
 		want   int
 	}{
 		{"healthz ok", http.MethodGet, "/healthz", http.StatusOK},
-		{"webhook accepted", http.MethodPost, "/webhook", http.StatusAccepted},
+		{"webhook unsigned", http.MethodPost, "/webhook", http.StatusUnauthorized},
 		{"webhook wrong method", http.MethodGet, "/webhook", http.StatusMethodNotAllowed},
 		{"unknown path", http.MethodGet, "/nope", http.StatusNotFound},
 	}
 
-	h := NewHandler(discardLogger())
+	h := NewHandler(discardLogger(), []byte("test-secret"))
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d", rec.Code, tt.want)
+			}
+		})
+	}
+}
+
+// TestWebhookSignatureAndLimit checks that only correctly signed bodies under the size limit are accepted.
+func TestWebhookSignatureAndLimit(t *testing.T) {
+	secret := []byte("test-secret")
+	body := []byte(`{"action":"queued"}`)
+	huge := bytes.Repeat([]byte("a"), maxWebhookBody+1)
+
+	tests := []struct {
+		name   string
+		body   []byte
+		header string
+		want   int
+	}{
+		{"valid", body, sign(secret, body), http.StatusAccepted},
+		{"invalid signature", body, sign([]byte("wrong"), body), http.StatusUnauthorized},
+		{"missing signature", body, "", http.StatusUnauthorized},
+		{"tampered body", []byte(`{"action":"completed"}`), sign(secret, body), http.StatusUnauthorized},
+		{"body too large", huge, sign(secret, huge), http.StatusRequestEntityTooLarge},
+	}
+
+	h := NewHandler(discardLogger(), secret)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader(tt.body))
+			if tt.header != "" {
+				req.Header.Set("X-Hub-Signature-256", tt.header)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
 			if rec.Code != tt.want {
 				t.Errorf("status = %d, want %d", rec.Code, tt.want)
 			}
