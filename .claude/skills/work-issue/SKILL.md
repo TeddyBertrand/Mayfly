@@ -19,6 +19,7 @@ Follow the rules in `CLAUDE.md` throughout: explain first, and confirm before bi
 5. **Verify against acceptance criteria.** Go through each `- [ ]` line and state whether it is met and how it was checked. Say plainly what is not verified.
 6. **Record decisions.** If a design decision was made, offer to run `/decision` so it lands in `docs/design-decisions.md`.
 7. **Wrap up.** Summarize what changed and why, add a short "how to explain this to someone else" paragraph, and propose a commit split following the commit rules in `CLAUDE.md` (several one-line commits, one per logical part, no `Co-Authored-By`). **Commit and open a PR only if the user asks.** The PR body should reference the issue and list the acceptance criteria, with no AI attribution.
+8. **Close the issue.** Right after opening the PR, if every acceptance criterion is met, close the issue with `gh issue close <N> --comment "Done in #<PR>"`. PRs target `dev`, not the default branch, so `Closes #N` in the PR body does not close it on merge. If a criterion is still open, leave the issue open and say which one and why.
 
 ## Rules
 
