@@ -15,10 +15,10 @@ Set up `go mod init`, a `cmd/` + `internal/` layout (receiver, provisioner, reap
 - [x] `make lint test build` runs locally
 - [x] Config committed
 
-### [ci] CI skeleton on GitHub-hosted runners
+### **done** [ci] CI skeleton on GitHub-hosted runners (#3)
 Workflow that runs lint, test and build on push and PR. It stays on hosted runners until Mayfly can host its own CI (M6).
 - [ ] Workflow green on `main`
-- [ ] Go version pinned
+- [x] Go version pinned
 
 ### [security] Create the GitHub App with least-privilege permissions
 Create the app and subscribe it to `workflow_job` events. Grant the minimum permissions needed to generate JIT configs (repository "Administration: write" or the org self-hosted runners permission). Generate the private key and webhook secret.
