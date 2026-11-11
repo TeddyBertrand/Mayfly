@@ -29,7 +29,9 @@ Create the app and subscribe it to `workflow_job` events. Grant the minimum perm
 ### [infra] Cloud account, budget alerts and dev host
 Create the Hetzner project, add a budget/cost alert, pick a small instance size for development, and set up an SSH key.
 - [ ] Budget alert active
-- [ ] Dev host reachable (or a documented decision to develop locally first)
+- [x] Dev host reachable (or a documented decision to develop locally first)
+
+Decided to develop locally first (design decision 002). The Hetzner project, budget alert and SSH key move to the start of M2, before the first `terraform apply`.
 
 ### [docs] Decide and record the Go conventions
 Short `docs/design-decisions.md` start: config via env vars, structured logging (`log/slog`), HTTP stack (`net/http`), the GitHub client library choice (`go-github` or raw REST).
