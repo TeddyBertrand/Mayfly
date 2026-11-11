@@ -60,7 +60,9 @@ func TestServeShutsDownOnCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("healthz status = %d", resp.StatusCode)
 	}
