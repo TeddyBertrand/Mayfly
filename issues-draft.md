@@ -1,19 +1,19 @@
 # Mayfly: issue drafts
 
 Format: `## Milestone`, then one `###` per issue as `### [labels] Title`, followed by the body.
-Nothing here is on GitHub yet.
+All issues are on GitHub. Finished ones are marked **done** with their issue number.
 
 ## M0 - Foundations
 
-### [ci] Initialise Go module and repo layout
+### **done** [ci] Initialise Go module and repo layout (#1)
 Set up `go mod init`, a `cmd/` + `internal/` layout (receiver, provisioner, reaper as packages or binaries), `.gitignore`, LICENSE and a README stub.
-- [ ] `go build ./...` passes
-- [ ] Layout documented in the README stub
+- [x] `go build ./...` passes
+- [x] Layout documented in the README stub
 
-### [ci] Add linting and formatting
+### **done** [ci] Add linting and formatting (#2)
 `golangci-lint` config, `gofmt` check, and a Makefile (or Taskfile) with `build`, `test`, `lint`.
-- [ ] `make lint test build` runs locally
-- [ ] Config committed
+- [x] `make lint test build` runs locally
+- [x] Config committed
 
 ### [ci] CI skeleton on GitHub-hosted runners
 Workflow that runs lint, test and build on push and PR. It stays on hosted runners until Mayfly can host its own CI (M6).
