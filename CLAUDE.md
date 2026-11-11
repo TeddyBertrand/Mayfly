@@ -55,4 +55,5 @@ Commit only when the owner asks.
 - Each piece of work gets its own branch created from `dev`, named `<type>/<feature-name>` in lowercase kebab-case: `feat/`, `fix/`, `ci/`, `docs/`, `refacto/`. Example: `feat/webhook-signature-verification`.
 - The branch prefix follows the same types as commits. If none fits, ask the owner.
 - When the work is done, open a PR from the branch into `dev`. Merging `dev` into `main` is the owner's call.
+- When an issue is finished, mark it in `issues-draft.md` on the same branch: prefix its heading with `**done**`, append the GitHub issue number (e.g. `### **done** [ci] Add linting and formatting (#2)`), and tick its acceptance boxes (`- [x]`) that are met.
 - Creating or pushing branches and opening PRs are outward-facing: propose the branch name first and wait for the owner's go-ahead.
