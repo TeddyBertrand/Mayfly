@@ -1,16 +1,21 @@
 package receiver
 
 import (
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
 )
 
-// NewHandler returns the receiver routes: GET /healthz and POST /webhook.
-func NewHandler(logger *slog.Logger) http.Handler {
+// maxWebhookBody caps webhook bodies; workflow_job payloads are tens of KB.
+const maxWebhookBody = 1 << 20
+
+// NewHandler returns the receiver routes: GET /healthz and POST /webhook signed with secret.
+func NewHandler(logger *slog.Logger, secret []byte) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz)
-	mux.HandleFunc("POST /webhook", handleWebhook(logger))
+	mux.HandleFunc("POST /webhook", handleWebhook(logger, secret))
 	return mux
 }
 
@@ -20,12 +25,33 @@ func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ok\n"))
 }
 
-// handleWebhook accepts webhook deliveries; verification and parsing come in later issues.
-func handleWebhook(logger *slog.Logger) http.HandlerFunc {
+// handleWebhook reads the body under a size limit and rejects it unless its signature is valid.
+func handleWebhook(logger *slog.Logger, secret []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		logger.Info("webhook received",
+		log := logger.With(
 			"delivery_id", r.Header.Get("X-GitHub-Delivery"),
 			"event", r.Header.Get("X-GitHub-Event"))
+
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
+		if err != nil {
+			var tooBig *http.MaxBytesError
+			if errors.As(err, &tooBig) {
+				log.Warn("webhook body too large", "limit", maxWebhookBody)
+				http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			log.Warn("webhook body read failed", "err", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		if !VerifySignature(secret, body, r.Header.Get("X-Hub-Signature-256")) {
+			log.Warn("webhook signature rejected")
+			http.Error(w, "invalid signature", http.StatusUnauthorized)
+			return
+		}
+
+		log.Info("webhook accepted", "bytes", len(body))
 		w.WriteHeader(http.StatusAccepted)
 	}
 }

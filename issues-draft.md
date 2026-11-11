@@ -43,10 +43,10 @@ Short `docs/design-decisions.md` start: config via env vars, structured logging 
 `net/http` server with `/healthz` and `/webhook`, graceful shutdown, config from env.
 - [x] Starts, serves `/healthz`, shuts down cleanly on SIGTERM
 
-### [receiver][security] Verify webhook signatures
+### **done** [receiver][security] Verify webhook signatures (#8)
 Validate `X-Hub-Signature-256` using HMAC-SHA256 with a constant-time compare. Reject missing or invalid signatures with 401 before parsing the body.
-- [ ] Table-driven tests: valid, invalid, missing, tampered body
-- [ ] Body size limit applied
+- [x] Table-driven tests: valid, invalid, missing, tampered body
+- [x] Body size limit applied
 
 ### [receiver] Parse `workflow_job` events and dedupe deliveries
 Parse the event types and handle only `queued` (others logged). Deduplicate on `X-GitHub-Delivery` (in-memory first, interface for a store later) so retries do not start two workers.
