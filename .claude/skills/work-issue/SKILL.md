@@ -14,7 +14,7 @@ Follow the rules in `CLAUDE.md` throughout: explain first, and confirm before bi
 
 1. **Understand.** Read the issue and its acceptance criteria (the `- [ ]` lines), plus the related parts of `brief.md`. Restate the goal and the criteria in your own words and explain the concepts involved.
 2. **Plan.** Propose a short plan: files to create or change, the approach, and at least one alternative with its trade-off. Flag anything that needs confirmation (new dependency, cloud cost, design decision, secrets). **Stop and wait for approval before writing code.**
-3. **Branch.** After approval, create a branch named `<milestone>/<short-slug>` (e.g. `m1/verify-webhook-signatures`) from `main`. Do not work on `main` directly.
+3. **Branch.** After approval, create a branch from `dev` named `<type>/<short-slug>` (e.g. `feat/verify-webhook-signatures`), following section 6 of `CLAUDE.md`. Never work on `main` or `dev` directly.
 4. **Implement in small steps.** For each step, say what you are doing and why, then do it. Write tests alongside the code (table-driven in Go where it fits). Run `go build ./...`, `go vet ./...` and `go test ./...` once the Go module exists, and report results faithfully, including failures.
 5. **Verify against acceptance criteria.** Go through each `- [ ]` line and state whether it is met and how it was checked. Say plainly what is not verified.
 6. **Record decisions.** If a design decision was made, offer to run `/decision` so it lands in `docs/design-decisions.md`.
