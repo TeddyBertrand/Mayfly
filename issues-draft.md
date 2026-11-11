@@ -33,9 +33,9 @@ Create the Hetzner project, add a budget/cost alert, pick a small instance size 
 
 Decided to develop locally first (design decision 002). The Hetzner project, budget alert and SSH key move to the start of M2, before the first `terraform apply`.
 
-### [docs] Decide and record the Go conventions
+### **done** [docs] Decide and record the Go conventions (#6)
 Short `docs/design-decisions.md` start: config via env vars, structured logging (`log/slog`), HTTP stack (`net/http`), the GitHub client library choice (`go-github` or raw REST).
-- [ ] First entries written
+- [x] First entries written
 
 ## M1 - Core loop
 
