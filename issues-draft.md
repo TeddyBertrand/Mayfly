@@ -39,9 +39,9 @@ Short `docs/design-decisions.md` start: config via env vars, structured logging 
 
 ## M1 - Core loop
 
-### [receiver] Webhook HTTP server skeleton
+### **done** [receiver] Webhook HTTP server skeleton (#7)
 `net/http` server with `/healthz` and `/webhook`, graceful shutdown, config from env.
-- [ ] Starts, serves `/healthz`, shuts down cleanly on SIGTERM
+- [x] Starts, serves `/healthz`, shuts down cleanly on SIGTERM
 
 ### [receiver][security] Verify webhook signatures
 Validate `X-Hub-Signature-256` using HMAC-SHA256 with a constant-time compare. Reject missing or invalid signatures with 401 before parsing the body.
