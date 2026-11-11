@@ -16,7 +16,7 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	cfg, err := config.LoadReceiver(os.Getenv)
+	cfg, err := config.LoadReceiver(os.Getenv, os.ReadFile)
 	if err != nil {
 		logger.Error("invalid config", "err", err)
 		os.Exit(1)
