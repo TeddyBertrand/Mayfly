@@ -79,6 +79,14 @@ A cloudflared quick tunnel gets a new random URL on every run, so the App webhoo
 - [x] The previous URL is logged, and a failed update stops the script with a clear error
 - [x] Covered by tests against a fake GitHub API
 
+### [ci] Release automatically on push to main from a VERSION file
+Publish a GitHub Release whenever `main` is pushed with a version that has no tag yet. The version comes from a `VERSION` file bumped in the milestone PR (decision 010). M1 ships as v0.1.0.
+- [ ] Push to `main` with a new `VERSION` creates tag `v<VERSION>` and a GitHub Release with notes
+- [ ] Release has `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] Push to `main` without a version change publishes nothing
+- [ ] `mayfly --version` prints the release version
+- [ ] Dry run on a branch builds everything and publishes nothing
+
 ## M2 - Reliability and one-command deploy
 
 ### [reaper] Reaper for orphaned workers

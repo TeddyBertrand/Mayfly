@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -15,14 +17,30 @@ import (
 	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
 )
 
+// version is the release version, set at build time with -ldflags "-X main.version=<v>".
+var version = "dev"
+
 // main wires config, the GitHub client, the Docker backend, the provisioner and the receiver,
 // and runs them until SIGTERM or SIGINT.
 func main() {
+	if printVersion(os.Args[1:], os.Stdout) {
+		return
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger.Info("mayfly starting", "version", version)
 	if err := run(logger); err != nil {
 		logger.Error("mayfly failed", "err", err)
 		os.Exit(1)
 	}
+}
+
+// printVersion writes the version to w and reports true when args ask for it.
+func printVersion(args []string, w io.Writer) bool {
+	if len(args) == 1 && (args[0] == "--version" || args[0] == "-version") {
+		_, _ = fmt.Fprintln(w, version)
+		return true
+	}
+	return false
 }
 
 // run builds every component and blocks until shutdown completes.
