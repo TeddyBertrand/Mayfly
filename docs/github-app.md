@@ -48,6 +48,12 @@ Nothing else is granted. In particular, no Contents, Pull requests or Secrets ac
 
 - `workflow_job` only. The receiver acts on `queued` and uses `in_progress` and `completed` for worker state.
 
+### Changing permissions or repository access
+
+- Editing permissions in the App settings does not change existing installations. The installation owner must open the installation page (**Settings → Applications → Installed GitHub Apps → Configure**) and **accept the new permissions**. Until then, calls keep failing with `403 Resource not accessible by integration`.
+- Restrict **Repository access** to `mayfly-demo` *before* accepting a write permission, so the wider permission is never granted on other repositories, even briefly.
+- Check what the installation actually holds with the live test (`MAYFLY_LIVE_TEST=1 go test -v -run Live ./internal/github/`). It logs the granted permissions, `repository_selection` and the reachable repositories. Expected: `administration:write`, `selected`, `[TeddyBertrand/mayfly-demo]`.
+
 ## Accepted risk: Administration is broad
 
 For repositories owned by a personal account, GitHub offers no permission narrower than **Administration: write** for managing self-hosted runners. That permission also covers repo settings and repo deletion. Organizations have a narrower "Self-hosted runners" permission, but Mayfly runs on a personal account.
