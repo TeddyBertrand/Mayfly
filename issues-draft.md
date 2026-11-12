@@ -69,9 +69,15 @@ On `queued`, call the provisioner and start the worker. Use a job queue (channel
 - [x] A `workflow_job` on the demo repo runs on a Mayfly worker
 - [x] Webhook response does not wait on provisioning
 
-### [docs] Local dev guide with a tunnel
+### **done** [docs] Local dev guide with a tunnel (#13)
 Document how to run locally and receive webhooks (smee.io, cloudflared or ngrok).
-- [ ] Steps verified from a clean checkout
+- [x] Steps verified from a clean checkout
+
+### **done** [infra] Set the App webhook URL automatically in local dev (#67)
+A cloudflared quick tunnel gets a new random URL on every run, so the App webhook URL had to be pasted by hand each time. Use `PATCH /app/hook/config` with the App JWT to set it once the tunnel is up.
+- [x] `make dev` sets the App webhook URL to the tunnel URL without manual steps
+- [x] The previous URL is logged, and a failed update stops the script with a clear error
+- [x] Covered by tests against a fake GitHub API
 
 ## M2 - Reliability and one-command deploy
 
