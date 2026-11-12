@@ -30,4 +30,6 @@ Build everything with:
 go build ./...
 ```
 
-**Status:** early planning.
+To run Mayfly locally and send it real jobs from GitHub, follow [docs/local-dev.md](docs/local-dev.md).
+
+**Status:** M1 core loop works: a `workflow_job` webhook starts a one-job Docker runner that is removed afterwards.
