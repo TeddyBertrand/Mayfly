@@ -71,3 +71,24 @@ Each entry records one decision, the options considered and the consequences. En
   - **B. Defer to the provisioner (#10/#12):** the receiver treats every queued job as ours, and the provisioner filters when it sets runner labels. Keeps #9 minimal, but puts the decision after dedupe and queueing, and leaves a window where wrong jobs flow through the pipeline.
 - **Decision:** A. The receiver filters on `MAYFLY_RUNNER_LABELS`; `self-hosted` is not required, so `runs-on: mayfly` and `runs-on: [self-hosted, mayfly]` both match.
 - **Consequences:** Only jobs Mayfly should run reach the deduper and the provisioner. The JIT runners created in #10 must register with at least these labels, or GitHub will not assign them the job. A job that asks for an extra label Mayfly's runners lack (e.g. `gpu`) still passes the filter and would wait unassigned; revisit by also checking that job labels are a subset of the runner's labels if that case appears.
+
+## 008. Docker through the raw Engine API
+- **Date:** 2026-11-12
+- **Status:** accepted
+- **Context:** The provisioner must create, start, wait for and remove one container per job (#11). The Docker daemon exposes a REST API on a Unix socket (`/var/run/docker.sock`); the CLI and the SDK are both clients of it.
+- **Options considered:**
+  - **A. Raw Engine API with `net/http` over the Unix socket:** no dependency, native contexts and timeouts, HTTP status plus JSON errors. About 150 lines to write and test by hand.
+  - **B. Shell out to the `docker` CLI:** least code, but needs the binary installed, errors are stderr text to parse, and cancellation means killing a process.
+  - **C. Official Go SDK (`github.com/docker/docker/client`):** typed and maintained, but a large dependency tree for five endpoints, and the flow is hidden.
+- **Decision:** A. A small engine client in `internal/worker/docker`, with the API version pinned to `v1.44`.
+- **Consequences:** Same approach as decision 006, so both external systems are plain, visible HTTP. The wait is registered with `condition=removed` before start, so a container removed by `AutoRemove` cannot be missed. Error handling and the pull progress stream are ours to test. Revisit if Mayfly needs many more Docker features (networks, volumes, exec).
+
+## 009. Official runner image, pinned
+- **Date:** 2026-11-12
+- **Status:** accepted
+- **Context:** Each worker container needs the GitHub Actions runner. M4 will add a pre-baked image with toolchains, so M1 only needs a working, trustworthy base.
+- **Options considered:**
+  - **A. `ghcr.io/actions/actions-runner`, pinned to an exact release:** maintained by GitHub, nothing to build. Contains only the runner and minimal tools.
+  - **B. Own Dockerfile from `ubuntu` with the runner tarball:** full control over contents, but we track runner releases and checksums ourselves.
+- **Decision:** A. `ghcr.io/actions/actions-runner:2.338.2`, overridable for M4. The JIT config is passed as `ACTIONS_RUNNER_INPUT_JITCONFIG`, not `--jitconfig`, so it never appears in the host's process list; this was checked against the real image.
+- **Consequences:** No image to build or publish in M1, and M4's pre-baked image builds `FROM` it. The pin must be bumped by hand; GitHub stops accepting very old runner versions, so a stale pin eventually breaks job pickup. The runner exits 0 even when it fails, so the container exit code is logged but not used as a job result.
