@@ -9,6 +9,8 @@ import (
 type Deduper interface {
 	// Seen reports whether id was already recorded, and records it if not, in one atomic step.
 	Seen(id string) bool
+	// Forget removes id so a later redelivery is processed, used when the handoff fails.
+	Forget(id string)
 }
 
 // MemoryDeduper is an in-process Deduper whose entries expire after a TTL.
@@ -39,6 +41,13 @@ func (d *MemoryDeduper) Seen(id string) bool {
 	}
 	d.seen[id] = now
 	return false
+}
+
+// Forget implements Deduper.
+func (d *MemoryDeduper) Forget(id string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.seen, id)
 }
 
 // sweep drops expired entries so memory stays bounded; the caller holds d.mu.
