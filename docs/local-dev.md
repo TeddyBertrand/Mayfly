@@ -10,7 +10,7 @@ GitHub ──webhook──► https://<random>.trycloudflare.com ──► cloud
 
 **Why a tunnel:** GitHub pushes webhooks to a public HTTPS URL, and a laptop behind NAT has none. `cloudflared` opens an *outbound* connection to Cloudflare and receives requests for its public URL through it, so no port forwarding or firewall change is needed.
 
-**Shortcut:** once the prerequisites and one-time setup below are done, `make dev` (which runs [scripts/dev.sh](../scripts/dev.sh)) does sections 4 and 5 for you: it builds and starts Mayfly, opens the tunnel, checks `/healthz` through it, and prints the webhook URL to paste into the App settings. Ctrl-C stops both. Logs are kept in a temporary directory it prints. It uses the same `MAYFLY_*` variables, with the App ID and the `~/.config/mayfly/` paths as defaults. The manual steps stay below because they explain what the script does.
+**Shortcut:** once the prerequisites and one-time setup below are done, `make dev` (which runs [scripts/dev.sh](../scripts/dev.sh)) does sections 4 and 5 for you: it builds and starts Mayfly, opens the tunnel, checks `/healthz` through it, and points the App's webhook at the tunnel with `cmd/setwebhook`. Ctrl-C stops both. Logs are kept in a temporary directory it prints. It uses the same `MAYFLY_*` variables, with the App ID and the `~/.config/mayfly/` paths as defaults. The manual steps stay below because they explain what the script does.
 
 ## 1. Prerequisites
 
@@ -111,9 +111,15 @@ cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080
 It prints a URL like `https://<four-random-words>.trycloudflare.com`. Then:
 
 1. Check it reaches Mayfly: `curl https://<url>/healthz` answers `ok`.
-2. In the App settings (**General → Webhook URL**), set `https://<url>/webhook` and **Save changes**. Leave the secret unchanged.
+2. Point the App's webhook at it, with the same `MAYFLY_APP_ID` and `MAYFLY_APP_KEY_FILE` as Mayfly:
 
-A quick tunnel gets a new URL every run, so step 2 repeats each time. A named Cloudflare tunnel keeps a stable URL but needs a Cloudflare account and a domain.
+   ```bash
+   go run ./cmd/setwebhook https://<url>/webhook
+   ```
+
+   It logs the old and new URL. It calls `PATCH /app/hook/config` with the App JWT and sends only the URL, so the webhook secret is untouched. To do it by hand instead: App settings, **General → Webhook URL**, then **Save changes**.
+
+A quick tunnel gets a new URL every run, so step 2 repeats each time (`make dev` does it for you). A named Cloudflare tunnel keeps a stable URL but needs a Cloudflare account and a domain.
 
 ## 6. Run the smoke test
 
@@ -152,7 +158,8 @@ Press Ctrl-C in both terminals. Mayfly cancels running workers (their containers
 |---|---|---|
 | `jit config failed ... 403 Resource not accessible by integration` | App permission changed but not accepted, or the repo is not in the installation | Accept the request on the installation page; run the live test to see actual permissions and repos |
 | `webhook signature rejected` | Secret file does not match the App's secret | Rewrite one of them so both hold the same value; trailing newlines are trimmed by Mayfly |
-| No log line at all after triggering | Tunnel URL changed or App settings not saved | Check the App's **Advanced → Recent Deliveries**; redeliver from there once fixed |
+| No log line at all after triggering | Tunnel URL changed and the App still points at the old one | Rerun `setwebhook` (or `make dev`); check the App's **Advanced → Recent Deliveries** and redeliver from there |
+| `set webhook url failed` | Wrong App ID or key, or the key was revoked | Check `MAYFLY_APP_ID` and `MAYFLY_APP_KEY_FILE`; the error shows GitHub's status and message |
 | `workflow_job not for mayfly` | Job's `runs-on` lacks the `mayfly` label | Add `mayfly` to `runs-on` |
 | Job stays "Queued" on GitHub after `worker started` | Job asks for a label the runner does not have (e.g. `gpu`) | Use only `self-hosted`, `linux`, `x64` and the Mayfly labels |
 | `workflow_job handoff failed`, HTTP 503 | Queue full | Raise `MAYFLY_QUEUE_SIZE` or `MAYFLY_WORKERS`; redeliver from GitHub |

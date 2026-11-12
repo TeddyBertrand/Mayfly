@@ -28,6 +28,7 @@ target="http://${MAYFLY_LISTEN_ADDR/#:/127.0.0.1:}"
 
 echo "dev.sh: building into $work"
 go build -o "$work/mayfly" ./cmd/mayfly
+go build -o "$work/setwebhook" ./cmd/setwebhook
 
 mayfly_pid=""
 tunnel_pid=""
@@ -58,21 +59,32 @@ for _ in $(seq 60); do
 done
 [[ -n "$url" ]] || fail "no tunnel URL after 30s, see $work/tunnel.log"
 
-# A new trycloudflare hostname can take a few seconds to resolve.
-for _ in $(seq 30); do
-	curl -fsS -m 5 "$url/healthz" >/dev/null 2>&1 && break
+for _ in $(seq 60); do
+	grep -q "Registered tunnel connection" "$work/tunnel.log" && break
+	kill -0 "$tunnel_pid" 2>/dev/null || fail "cloudflared exited, see $work/tunnel.log"
+	sleep 0.5
+done
+
+# healthz resolves the new hostname through DNS-over-HTTPS, because an early lookup can leave
+# a cached "no such domain" in the local resolver for a while.
+healthz() {
+	curl -fsS -m 5 --doh-url https://1.1.1.1/dns-query "$url/healthz" >/dev/null 2>&1
+}
+for _ in $(seq 60); do
+	healthz && break
 	sleep 1
 done
-curl -fsS -m 5 "$url/healthz" >/dev/null 2>&1 || fail "$url/healthz is not reachable, see $work/tunnel.log"
+healthz || fail "$url/healthz is not reachable, see $work/tunnel.log"
+
+"$work/setwebhook" "$url/webhook" || fail "could not set the App webhook URL; set it by hand to $url/webhook"
 
 cat <<EOF
 
-  Mayfly is reachable through the tunnel.
-  Set the App webhook URL (GitHub App settings, General, Webhook URL) to:
+  Mayfly is reachable through the tunnel, and the App webhook URL is set to:
 
       $url/webhook
 
-  Then trigger a job:  gh workflow run mayfly-smoke -R TeddyBertrand/mayfly-demo
+  Trigger a job:  gh workflow run mayfly-smoke -R TeddyBertrand/mayfly-demo
   Press Ctrl-C to stop.
 
 EOF
