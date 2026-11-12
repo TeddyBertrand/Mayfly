@@ -32,12 +32,17 @@ func TestLoadReceiver(t *testing.T) {
 		{
 			name: "defaults with trimmed secret",
 			env:  secretEnv,
-			want: ReceiverConfig{ListenAddr: ":8080", ShutdownTimeout: 10 * time.Second, WebhookSecret: []byte("test-secret")},
+			want: ReceiverConfig{ListenAddr: ":8080", ShutdownTimeout: 10 * time.Second, WebhookSecret: []byte("test-secret"), RunnerLabels: []string{"mayfly"}},
 		},
 		{
 			name: "overrides",
-			env:  map[string]string{"MAYFLY_LISTEN_ADDR": "127.0.0.1:9000", "MAYFLY_SHUTDOWN_TIMEOUT": "3s", "MAYFLY_WEBHOOK_SECRET_FILE": "/secret"},
-			want: ReceiverConfig{ListenAddr: "127.0.0.1:9000", ShutdownTimeout: 3 * time.Second, WebhookSecret: []byte("test-secret")},
+			env:  map[string]string{"MAYFLY_LISTEN_ADDR": "127.0.0.1:9000", "MAYFLY_SHUTDOWN_TIMEOUT": "3s", "MAYFLY_WEBHOOK_SECRET_FILE": "/secret", "MAYFLY_RUNNER_LABELS": "mayfly, linux"},
+			want: ReceiverConfig{ListenAddr: "127.0.0.1:9000", ShutdownTimeout: 3 * time.Second, WebhookSecret: []byte("test-secret"), RunnerLabels: []string{"mayfly", "linux"}},
+		},
+		{
+			name:    "empty label",
+			env:     map[string]string{"MAYFLY_WEBHOOK_SECRET_FILE": "/secret", "MAYFLY_RUNNER_LABELS": "mayfly,"},
+			wantErr: true,
 		},
 		{
 			name:    "invalid duration",
