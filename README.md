@@ -10,16 +10,19 @@ See [brief.md](brief.md) for goals, architecture and scope.
 
 ```
 cmd/
-  receiver/      entrypoint: webhook HTTP server
-  provisioner/   entrypoint: creates workers and JIT runner configs
-  reaper/        entrypoint: cleans up leaked or stuck workers
+  mayfly/          entrypoint: receiver + provisioner in one process
+  reaper/          entrypoint: cleans up leaked or stuck workers
 internal/
-  receiver/      webhook handling and signature verification
-  provisioner/   GitHub API client and worker lifecycle
-  reaper/        orphan detection and cleanup
+  config/          settings from MAYFLY_* environment variables
+  receiver/        webhook handling, signature verification, dedupe
+  provisioner/     job queue and worker pool
+  github/          GitHub App client (JWT, installation tokens, JIT config)
+  worker/          worker interface
+  worker/docker/   Docker backend over the Engine API
+  reaper/          orphan detection and cleanup
 ```
 
-Each component is its own binary (`cmd/<name>`) with its logic in `internal/<name>`, so they can be deployed and scaled independently. `internal/` keeps the code private to this module.
+The receiver and provisioner share one binary so they can pass jobs through an in-memory queue ([decision 001](docs/design-decisions.md)). Each component keeps its own `internal/` package, so splitting them later stays cheap. `internal/` keeps the code private to this module.
 
 Build everything with:
 
