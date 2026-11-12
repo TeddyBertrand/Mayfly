@@ -64,10 +64,10 @@ Container image with the official runner. The provisioner starts it with the JIT
 - [x] Container is gone after the job finishes
 - [x] Failed container start is logged with the job ID
 
-### [provisioner] Wire receiver to provisioner end to end
+### **done** [provisioner] Wire receiver to provisioner end to end (#12)
 On `queued`, call the provisioner and start the worker. Use a job queue (channel) between them so the webhook returns quickly (under 1s).
-- [ ] A `workflow_job` on the demo repo runs on a Mayfly worker
-- [ ] Webhook response does not wait on provisioning
+- [x] A `workflow_job` on the demo repo runs on a Mayfly worker
+- [x] Webhook response does not wait on provisioning
 
 ### [docs] Local dev guide with a tunnel
 Document how to run locally and receive webhooks (smee.io, cloudflared or ngrok).
