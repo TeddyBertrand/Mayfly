@@ -29,16 +29,11 @@ func LoadReceiver(getenv func(string) string, readFile func(string) ([]byte, err
 		cfg.ListenAddr = v
 	}
 
-	if v := getenv("MAYFLY_SHUTDOWN_TIMEOUT"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return ReceiverConfig{}, fmt.Errorf("MAYFLY_SHUTDOWN_TIMEOUT: %w", err)
-		}
-		if d <= 0 {
-			return ReceiverConfig{}, fmt.Errorf("MAYFLY_SHUTDOWN_TIMEOUT: must be positive, got %s", d)
-		}
-		cfg.ShutdownTimeout = d
+	d, err := parseDuration(getenv, "MAYFLY_SHUTDOWN_TIMEOUT", cfg.ShutdownTimeout)
+	if err != nil {
+		return ReceiverConfig{}, err
 	}
+	cfg.ShutdownTimeout = d
 
 	secret, err := loadSecretFile(getenv, readFile, "MAYFLY_WEBHOOK_SECRET_FILE")
 	if err != nil {
