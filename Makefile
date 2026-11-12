@@ -1,4 +1,4 @@
-.PHONY: build test fmt-check lint
+.PHONY: build test fmt-check lint dev
 
 build:
 	go build ./...
@@ -12,3 +12,6 @@ fmt-check:
 
 lint: fmt-check
 	golangci-lint run
+
+dev:
+	./scripts/dev.sh
