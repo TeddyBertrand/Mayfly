@@ -57,3 +57,14 @@ Commit only when the owner asks.
 - When the work is done, open a PR from the branch into `dev`. Merging `dev` into `main` is the owner's call.
 - When an issue is finished, mark it in `issues-draft.md` on the same branch: prefix its heading with `**done**`, append the GitHub issue number (e.g. `### **done** [ci] Add linting and formatting (#2)`), and tick its acceptance boxes (`- [x]`) that are met.
 - Creating or pushing branches and opening PRs are outward-facing: propose the branch name first and wait for the owner's go-ahead.
+
+## 7. Issues and pull requests
+
+Every PR is linked to the issue it implements, and merging the PR closes that issue.
+
+- **Always link.** Put a closing keyword on its own line in the PR body: `Closes #<number>`. Use one keyword per issue (`Closes #12`, `Closes #13`), because `Closes #12, #13` only closes the first.
+- **Closing is automatic.** GitHub closes the issue when the PR is merged into the default branch (`main`). Never close issues by hand, and never merge a PR that is missing the link.
+- **No issue yet?** Create it first (or ask the owner), then link it. Work without an issue does not get a PR.
+- **Stacked PRs.** Closing keywords only fire for PRs targeting `main`. For a PR targeting another branch, still reference the issue (`Refs #<number>`), and put the `Closes` line on the PR that lands on `main`.
+- **Check after opening.** Confirm the issue shows the PR under "Development" (e.g. `gh pr view --json closingIssuesReferences`).
+- The PR body still carries no AI attribution (see section 4).
