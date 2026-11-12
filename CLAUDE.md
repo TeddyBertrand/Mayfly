@@ -66,5 +66,5 @@ Every PR is linked to the issue it implements, and merging the PR closes that is
 - **Closing is automatic.** GitHub closes the issue when the PR is merged into the default branch (`main`). Never close issues by hand, and never merge a PR that is missing the link.
 - **No issue yet?** Create it first (or ask the owner), then link it. Work without an issue does not get a PR.
 - **Stacked PRs.** Closing keywords only fire for PRs targeting `main`. For a PR targeting another branch, still reference the issue (`Refs #<number>`), and put the `Closes` line on the PR that lands on `main`.
-- **Check after opening.** Confirm the issue shows the PR under "Development" (e.g. `gh pr view --json closingIssuesReferences`).
+- **Check after opening.** Confirm the issue shows the PR under "Development". `gh pr view` has no field for this, so query it: `gh api graphql -f query='{repository(owner:"TeddyBertrand",name:"Mayfly"){pullRequest(number:<N>){closingIssuesReferences(first:10){nodes{number}}}}}'` lists the issues the PR will close. It only fills for PRs into `main`; a PR into `dev` with `Refs` shows none.
 - The PR body still carries no AI attribution (see section 4).
