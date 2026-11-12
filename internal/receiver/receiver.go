@@ -8,9 +8,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/config"
 )
+
+// dedupeTTL matches GitHub's three-day window for redelivering a webhook.
+const dedupeTTL = 72 * time.Hour
 
 // Run serves the receiver on cfg.ListenAddr until ctx is cancelled, then shuts down gracefully.
 func Run(ctx context.Context, cfg config.ReceiverConfig, logger *slog.Logger) error {
@@ -23,7 +27,13 @@ func Run(ctx context.Context, cfg config.ReceiverConfig, logger *slog.Logger) er
 
 // serve runs the HTTP server on ln and drains in-flight requests within cfg.ShutdownTimeout once ctx ends.
 func serve(ctx context.Context, ln net.Listener, cfg config.ReceiverConfig, logger *slog.Logger) error {
-	srv := newServer(NewHandler(logger, cfg.WebhookSecret))
+	srv := newServer(NewHandler(logger, Webhook{
+		Secret: cfg.WebhookSecret,
+		Labels: cfg.RunnerLabels,
+		Dedupe: NewMemoryDeduper(dedupeTTL),
+		// Placeholder until the provisioner queue is wired in (#12).
+		OnQueued: func(Job) {},
+	}))
 
 	errCh := make(chan error, 1)
 	go func() {

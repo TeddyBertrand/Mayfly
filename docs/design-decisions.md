@@ -61,3 +61,13 @@ Each entry records one decision, the options considered and the consequences. En
   - **B. `go-github` plus `ghinstallation`:** typed, maintained client with App auth and token refresh handled. Two dependencies, frequent major versions to track, and the auth flow is hidden.
 - **Decision:** A. Raw REST with a hand-written App authentication.
 - **Consequences:** The client stays small and every request is visible, which suits a project whose owner must explain it. Correctness of the JWT, token expiry and API error handling (rate limits, 4xx/5xx) is ours to test. Revisit if the number of endpoints grows well past a dozen.
+
+## 007. Filter `workflow_job` events by runner label in the receiver
+- **Date:** 2026-11-12
+- **Status:** accepted
+- **Context:** GitHub sends a `workflow_job` event for every job in the repositories where the App is installed, including jobs for GitHub-hosted runners (`runs-on: ubuntu-latest`). Without a filter, Mayfly would request a worker for jobs it must never run, and those workers would register and then sit idle until reaped, wasting money.
+- **Options considered:**
+  - **A. Filter in the receiver (#9):** accept a queued job only if its `labels` contain every label in `MAYFLY_RUNNER_LABELS` (comma-separated, default `mayfly`), compared case-insensitively as GitHub does. Other jobs get a 2xx and a log line. Decides "is this for us?" at the entry point, before any state or API call, at the cost of a little more logic in #9.
+  - **B. Defer to the provisioner (#10/#12):** the receiver treats every queued job as ours, and the provisioner filters when it sets runner labels. Keeps #9 minimal, but puts the decision after dedupe and queueing, and leaves a window where wrong jobs flow through the pipeline.
+- **Decision:** A. The receiver filters on `MAYFLY_RUNNER_LABELS`; `self-hosted` is not required, so `runs-on: mayfly` and `runs-on: [self-hosted, mayfly]` both match.
+- **Consequences:** Only jobs Mayfly should run reach the deduper and the provisioner. The JIT runners created in #10 must register with at least these labels, or GitHub will not assign them the job. A job that asks for an extra label Mayfly's runners lack (e.g. `gpu`) still passes the filter and would wait unassigned; revisit by also checking that job labels are a subset of the runner's labels if that case appears.

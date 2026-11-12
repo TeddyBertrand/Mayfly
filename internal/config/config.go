@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -13,6 +14,7 @@ type ReceiverConfig struct {
 	ListenAddr      string
 	ShutdownTimeout time.Duration
 	WebhookSecret   []byte
+	RunnerLabels    []string
 }
 
 // LoadReceiver reads the receiver settings through getenv and readFile, applying defaults
@@ -44,7 +46,30 @@ func LoadReceiver(getenv func(string) string, readFile func(string) ([]byte, err
 	}
 	cfg.WebhookSecret = secret
 
+	labels, err := parseLabels(getenv("MAYFLY_RUNNER_LABELS"))
+	if err != nil {
+		return ReceiverConfig{}, fmt.Errorf("MAYFLY_RUNNER_LABELS: %w", err)
+	}
+	cfg.RunnerLabels = labels
+
 	return cfg, nil
+}
+
+// parseLabels splits a comma-separated label list, defaulting to "mayfly" when v is empty.
+func parseLabels(v string) ([]string, error) {
+	if v == "" {
+		return []string{"mayfly"}, nil
+	}
+	parts := strings.Split(v, ",")
+	labels := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return nil, errors.New("empty label")
+		}
+		labels = append(labels, p)
+	}
+	return labels, nil
 }
 
 // loadSecretFile reads the secret at the path named by env, trimming surrounding whitespace.
