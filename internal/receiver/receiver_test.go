@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,84 @@ import (
 // discardLogger returns a logger that drops all output.
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// testWebhook returns a Webhook with the "mayfly" label, a fresh deduper, and onQueued (or a no-op).
+func testWebhook(secret []byte, onQueued func(Job)) Webhook {
+	if onQueued == nil {
+		onQueued = func(Job) {}
+	}
+	return Webhook{Secret: secret, Labels: []string{"mayfly"}, Dedupe: NewMemoryDeduper(time.Hour), OnQueued: onQueued}
+}
+
+// postSigned sends a signed POST /webhook with the given event and delivery headers.
+func postSigned(h http.Handler, secret []byte, event, delivery, body string) int {
+	req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader([]byte(body)))
+	req.Header.Set("X-Hub-Signature-256", sign(secret, []byte(body)))
+	req.Header.Set("X-GitHub-Event", event)
+	if delivery != "" {
+		req.Header.Set("X-GitHub-Delivery", delivery)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec.Code
+}
+
+// TestWebhookDispatch checks status codes and handoffs for each kind of verified delivery.
+func TestWebhookDispatch(t *testing.T) {
+	secret := []byte("test-secret")
+	completed := strings.Replace(queuedPayload, `"queued"`, `"completed"`, 1)
+	hosted := strings.Replace(queuedPayload, `["self-hosted", "mayfly"]`, `["ubuntu-latest"]`, 1)
+
+	tests := []struct {
+		name       string
+		event      string
+		delivery   string
+		body       string
+		wantStatus int
+		wantJobs   int
+	}{
+		{"queued for mayfly", "workflow_job", "d1", queuedPayload, http.StatusAccepted, 1},
+		{"ping", "ping", "d2", `{"zen":"hi"}`, http.StatusOK, 0},
+		{"unknown event", "push", "d3", `{"ref":"main"}`, http.StatusAccepted, 0},
+		{"no event header", "", "d4", `{}`, http.StatusAccepted, 0},
+		{"completed action", "workflow_job", "d5", completed, http.StatusAccepted, 0},
+		{"github-hosted labels", "workflow_job", "d6", hosted, http.StatusAccepted, 0},
+		{"malformed workflow_job", "workflow_job", "d7", `{`, http.StatusBadRequest, 0},
+		{"missing delivery id", "workflow_job", "", queuedPayload, http.StatusBadRequest, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var jobs []Job
+			h := NewHandler(discardLogger(), testWebhook(secret, func(j Job) { jobs = append(jobs, j) }))
+			if got := postSigned(h, secret, tt.event, tt.delivery, tt.body); got != tt.wantStatus {
+				t.Errorf("status = %d, want %d", got, tt.wantStatus)
+			}
+			if len(jobs) != tt.wantJobs {
+				t.Errorf("handoffs = %d, want %d", len(jobs), tt.wantJobs)
+			}
+		})
+	}
+}
+
+// TestWebhookSameDeliveryTwice checks that a redelivered queued job is handed off once.
+func TestWebhookSameDeliveryTwice(t *testing.T) {
+	secret := []byte("test-secret")
+	var jobs []Job
+	h := NewHandler(discardLogger(), testWebhook(secret, func(j Job) { jobs = append(jobs, j) }))
+
+	for i := range 2 {
+		if got := postSigned(h, secret, "workflow_job", "same-delivery", queuedPayload); got != http.StatusAccepted {
+			t.Fatalf("attempt %d: status = %d, want 202", i+1, got)
+		}
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("handoffs = %d, want 1", len(jobs))
+	}
+	if jobs[0].ID != 42 {
+		t.Errorf("job id = %d, want 42", jobs[0].ID)
+	}
 }
 
 // TestHandlerRoutes checks status codes for each route and method.
@@ -33,7 +112,7 @@ func TestHandlerRoutes(t *testing.T) {
 		{"unknown path", http.MethodGet, "/nope", http.StatusNotFound},
 	}
 
-	h := NewHandler(discardLogger(), []byte("test-secret"))
+	h := NewHandler(discardLogger(), testWebhook([]byte("test-secret"), nil))
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
@@ -64,7 +143,7 @@ func TestWebhookSignatureAndLimit(t *testing.T) {
 		{"body too large", huge, sign(secret, huge), http.StatusRequestEntityTooLarge},
 	}
 
-	h := NewHandler(discardLogger(), secret)
+	h := NewHandler(discardLogger(), testWebhook(secret, nil))
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader(tt.body))
