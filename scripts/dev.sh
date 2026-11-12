@@ -28,6 +28,7 @@ target="http://${MAYFLY_LISTEN_ADDR/#:/127.0.0.1:}"
 
 echo "dev.sh: building into $work"
 go build -o "$work/mayfly" ./cmd/mayfly
+go build -o "$work/setwebhook" ./cmd/setwebhook
 
 mayfly_pid=""
 tunnel_pid=""
@@ -75,14 +76,15 @@ for _ in $(seq 60); do
 done
 healthz || fail "$url/healthz is not reachable, see $work/tunnel.log"
 
+"$work/setwebhook" "$url/webhook" || fail "could not set the App webhook URL; set it by hand to $url/webhook"
+
 cat <<EOF
 
-  Mayfly is reachable through the tunnel.
-  Set the App webhook URL (GitHub App settings, General, Webhook URL) to:
+  Mayfly is reachable through the tunnel, and the App webhook URL is set to:
 
       $url/webhook
 
-  Then trigger a job:  gh workflow run mayfly-smoke -R TeddyBertrand/mayfly-demo
+  Trigger a job:  gh workflow run mayfly-smoke -R TeddyBertrand/mayfly-demo
   Press Ctrl-C to stop.
 
 EOF
