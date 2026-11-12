@@ -92,3 +92,14 @@ Each entry records one decision, the options considered and the consequences. En
   - **B. Own Dockerfile from `ubuntu` with the runner tarball:** full control over contents, but we track runner releases and checksums ourselves.
 - **Decision:** A. `ghcr.io/actions/actions-runner:2.338.2`, overridable for M4. The JIT config is passed as `ACTIONS_RUNNER_INPUT_JITCONFIG`, not `--jitconfig`, so it never appears in the host's process list; this was checked against the real image.
 - **Consequences:** No image to build or publish in M1, and M4's pre-baked image builds `FROM` it. The pin must be bumped by hand; GitHub stops accepting very old runner versions, so a stale pin eventually breaks job pickup. The runner exits 0 even when it fails, so the container exit code is logged but not used as a job result.
+
+## 010. Releases from a `VERSION` file on push to `main`
+- **Date:** 2026-11-12
+- **Status:** accepted
+- **Context:** `main` only moves when a milestone is merged from `dev`, so each milestone is a natural release. A release needs a version number, and something has to decide it on each push. Versions follow semver below 1.0: one minor version per milestone (M1 is v0.1.0), patch versions for fixes between milestones.
+- **Options considered:**
+  - **A. `VERSION` file:** the version is a line in the repo, bumped in the milestone PR. On each push to `main`, a workflow releases `v<VERSION>` if that tag does not exist yet. Automatic, reviewable, idempotent, no dependency.
+  - **B. Tag-driven:** the owner pushes `v0.1.0` by hand and the workflow releases on the tag. Simple, but one manual step per release and easy to forget.
+  - **C. release-please:** computes the version from commit types and opens a release PR. Fully derived, but adds a third-party action and bot commits typed `chore`, which the commit rules do not allow, and does not know the `refacto` type.
+- **Decision:** A. A `VERSION` file and a release workflow on push to `main`, with a manual dry run.
+- **Consequences:** Releasing a milestone means bumping `VERSION` in the `dev` to `main` PR; forgetting it publishes nothing, which is safe. A push to `main` without a bump is a no-op. The version is stamped into the binary at build time. Release notes come from GitHub's generated list of merged PRs. Revisit if releases need signing or container images.
