@@ -3,6 +3,7 @@ package receiver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -25,7 +26,39 @@ func testWebhook(secret []byte, onQueued func(Job)) Webhook {
 	if onQueued == nil {
 		onQueued = func(Job) {}
 	}
-	return Webhook{Secret: secret, Labels: []string{"mayfly"}, Dedupe: NewMemoryDeduper(time.Hour), OnQueued: onQueued}
+	return Webhook{
+		Secret:   secret,
+		Labels:   []string{"mayfly"},
+		Dedupe:   NewMemoryDeduper(time.Hour),
+		OnQueued: func(j Job) error { onQueued(j); return nil },
+	}
+}
+
+// TestWebhookHandoffFailure checks that a rejected handoff answers 503 and lets the redelivery through.
+func TestWebhookHandoffFailure(t *testing.T) {
+	secret := []byte("test-secret")
+	wh := testWebhook(secret, nil)
+	fail := true
+	accepted := 0
+	wh.OnQueued = func(Job) error {
+		if fail {
+			return errors.New("queue full")
+		}
+		accepted++
+		return nil
+	}
+	h := NewHandler(discardLogger(), wh)
+
+	if got := postSigned(h, secret, "workflow_job", "d-retry", queuedPayload); got != http.StatusServiceUnavailable {
+		t.Fatalf("first attempt status = %d, want 503", got)
+	}
+	fail = false
+	if got := postSigned(h, secret, "workflow_job", "d-retry", queuedPayload); got != http.StatusAccepted {
+		t.Fatalf("redelivery status = %d, want 202", got)
+	}
+	if accepted != 1 {
+		t.Fatalf("accepted = %d, want 1", accepted)
+	}
 }
 
 // postSigned sends a signed POST /webhook with the given event and delivery headers.
@@ -169,7 +202,7 @@ func TestServeShutsDownOnCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, ln, cfg, discardLogger()) }()
+	go func() { done <- serve(ctx, ln, cfg, discardLogger(), func(Job) error { return nil }) }()
 
 	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
 	if err != nil {

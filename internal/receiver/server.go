@@ -13,10 +13,11 @@ const maxWebhookBody = 1 << 20
 
 // Webhook holds what the /webhook route needs to accept and hand off jobs.
 type Webhook struct {
-	Secret   []byte
-	Labels   []string
-	Dedupe   Deduper
-	OnQueued func(Job)
+	Secret []byte
+	Labels []string
+	Dedupe Deduper
+	// OnQueued hands a job off without blocking; an error means it was not accepted.
+	OnQueued func(Job) error
 }
 
 // NewHandler returns the receiver routes: GET /healthz and POST /webhook.
@@ -102,8 +103,13 @@ func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte)
 		return http.StatusAccepted
 	}
 
+	if err := wh.OnQueued(job); err != nil {
+		// Un-mark the delivery so GitHub's redelivery is not dropped as a duplicate.
+		wh.Dedupe.Forget(delivery)
+		log.Error("workflow_job handoff failed", "err", err)
+		return http.StatusServiceUnavailable
+	}
 	log.Info("workflow_job queued", "labels", job.Labels)
-	wh.OnQueued(job)
 	return http.StatusAccepted
 }
 

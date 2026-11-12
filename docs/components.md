@@ -37,9 +37,17 @@ The safety net. It finds and destroys workers that outlived their job: crashed m
 
 It is a separate binary on purpose: the thing that cleans up must not depend on the thing that may have failed. It backs the success metric "zero orphaned workers after a 24h soak test".
 
-## Why three binaries
+## How the components are packaged
 
-Different lifecycles. The receiver is always on and must be fast, the provisioner scales with job volume, and the reaper runs periodically and must survive failures in the other two. The cost is more moving parts than a single binary with subcommands.
+The receiver and the provisioner run in one binary, `cmd/mayfly` ([decision 001](design-decisions.md)). The receiver puts each accepted job on a bounded Go channel and answers GitHub at once; a fixed pool of provisioner goroutines takes jobs from it. When the channel is full, the receiver answers 503 and forgets the delivery ID, so a redelivery from GitHub is processed.
+
+```
+webhook ─► receiver ─► channel (MAYFLY_QUEUE_SIZE) ─► MAYFLY_WORKERS goroutines ─► JIT config ─► container
+```
+
+The reaper stays a separate binary (`cmd/reaper`): the thing that cleans up must not depend on the thing that may have failed.
+
+A JIT runner is not bound to the job that triggered it. GitHub gives it any queued job whose labels it matches, so with two jobs queued at once, worker A may run job B. The count stays one worker per job; the job ID in the runner name is the job that triggered the worker.
 
 ## In one paragraph
 
