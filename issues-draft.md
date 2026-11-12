@@ -59,10 +59,10 @@ Authenticate as the GitHub App (JWT then installation token) and call `generate-
 - [ ] Token caching and expiry handled
 - [ ] Runner name includes the job ID for traceability
 
-### [worker] Ephemeral Docker worker running `actions/runner`
+### **done** [worker] Ephemeral Docker worker running `actions/runner` (#11)
 Container image with the official runner. The provisioner starts it with the JIT config, it runs one job, then exits. The provisioner removes the container (`--rm` plus explicit cleanup).
-- [ ] Container is gone after the job finishes
-- [ ] Failed container start is logged with the job ID
+- [x] Container is gone after the job finishes
+- [x] Failed container start is logged with the job ID
 
 ### [provisioner] Wire receiver to provisioner end to end
 On `queued`, call the provisioner and start the worker. Use a job queue (channel) between them so the webhook returns quickly (under 1s).
