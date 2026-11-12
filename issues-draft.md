@@ -53,11 +53,11 @@ Parse the event types and handle only `queued` (others logged). Deduplicate on `
 - [x] Same delivery twice starts one worker
 - [x] Unknown events return 2xx and are ignored
 
-### [provisioner] GitHub API client with JIT config generation
+### **done** [provisioner] GitHub API client with JIT config generation (#10)
 Authenticate as the GitHub App (JWT then installation token) and call `generate-jitconfig` with a unique runner name and the right labels.
-- [ ] Returns an encoded JIT config for a test repo
-- [ ] Token caching and expiry handled
-- [ ] Runner name includes the job ID for traceability
+- [x] Returns an encoded JIT config for a test repo
+- [x] Token caching and expiry handled
+- [x] Runner name includes the job ID for traceability
 
 ### [worker] Ephemeral Docker worker running `actions/runner`
 Container image with the official runner. The provisioner starts it with the JIT config, it runs one job, then exits. The provisioner removes the container (`--rm` plus explicit cleanup).
