@@ -48,10 +48,10 @@ Validate `X-Hub-Signature-256` using HMAC-SHA256 with a constant-time compare. R
 - [x] Table-driven tests: valid, invalid, missing, tampered body
 - [x] Body size limit applied
 
-### [receiver] Parse `workflow_job` events and dedupe deliveries
+### **done** [receiver] Parse `workflow_job` events and dedupe deliveries (#9)
 Parse the event types and handle only `queued` (others logged). Deduplicate on `X-GitHub-Delivery` (in-memory first, interface for a store later) so retries do not start two workers.
-- [ ] Same delivery twice starts one worker
-- [ ] Unknown events return 2xx and are ignored
+- [x] Same delivery twice starts one worker
+- [x] Unknown events return 2xx and are ignored
 
 ### [provisioner] GitHub API client with JIT config generation
 Authenticate as the GitHub App (JWT then installation token) and call `generate-jitconfig` with a unique runner name and the right labels.
