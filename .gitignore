@@ -1,0 +1,13 @@
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+.env
+*.pem
+*.tfstate
+*.tfstate.*
+.terraform/
+.idea/
+.vscode/

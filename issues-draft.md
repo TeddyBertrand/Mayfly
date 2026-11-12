@@ -1,75 +1,91 @@
 # Mayfly: issue drafts
 
 Format: `## Milestone`, then one `###` per issue as `### [labels] Title`, followed by the body.
-Nothing here is on GitHub yet.
+All issues are on GitHub. Finished ones are marked **done** with their issue number.
 
 ## M0 - Foundations
 
-### [ci] Initialise Go module and repo layout
+### **done** [ci] Initialise Go module and repo layout (#1)
 Set up `go mod init`, a `cmd/` + `internal/` layout (receiver, provisioner, reaper as packages or binaries), `.gitignore`, LICENSE and a README stub.
-- [ ] `go build ./...` passes
-- [ ] Layout documented in the README stub
+- [x] `go build ./...` passes
+- [x] Layout documented in the README stub
 
-### [ci] Add linting and formatting
+### **done** [ci] Add linting and formatting (#2)
 `golangci-lint` config, `gofmt` check, and a Makefile (or Taskfile) with `build`, `test`, `lint`.
-- [ ] `make lint test build` runs locally
-- [ ] Config committed
+- [x] `make lint test build` runs locally
+- [x] Config committed
 
-### [ci] CI skeleton on GitHub-hosted runners
+### **done** [ci] CI skeleton on GitHub-hosted runners (#3)
 Workflow that runs lint, test and build on push and PR. It stays on hosted runners until Mayfly can host its own CI (M6).
 - [ ] Workflow green on `main`
-- [ ] Go version pinned
+- [x] Go version pinned
 
-### [security] Create the GitHub App with least-privilege permissions
+### **done** [security] Create the GitHub App with least-privilege permissions (#4)
 Create the app and subscribe it to `workflow_job` events. Grant the minimum permissions needed to generate JIT configs (repository "Administration: write" or the org self-hosted runners permission). Generate the private key and webhook secret.
-- [ ] App created and installed on the demo repo only
-- [ ] Permissions and the reason for each documented in `docs/github-app.md`
-- [ ] Private key and secret kept out of git
+- [x] App created and installed on the demo repo only
+- [x] Permissions and the reason for each documented in `docs/github-app.md`
+- [x] Private key and secret kept out of git
 
 ### [infra] Cloud account, budget alerts and dev host
 Create the Hetzner project, add a budget/cost alert, pick a small instance size for development, and set up an SSH key.
 - [ ] Budget alert active
-- [ ] Dev host reachable (or a documented decision to develop locally first)
+- [x] Dev host reachable (or a documented decision to develop locally first)
 
-### [docs] Decide and record the Go conventions
+Decided to develop locally first (design decision 002). The Hetzner project, budget alert and SSH key move to the start of M2, before the first `terraform apply`.
+
+### **done** [docs] Decide and record the Go conventions (#6)
 Short `docs/design-decisions.md` start: config via env vars, structured logging (`log/slog`), HTTP stack (`net/http`), the GitHub client library choice (`go-github` or raw REST).
-- [ ] First entries written
+- [x] First entries written
 
 ## M1 - Core loop
 
-### [receiver] Webhook HTTP server skeleton
+### **done** [receiver] Webhook HTTP server skeleton (#7)
 `net/http` server with `/healthz` and `/webhook`, graceful shutdown, config from env.
-- [ ] Starts, serves `/healthz`, shuts down cleanly on SIGTERM
+- [x] Starts, serves `/healthz`, shuts down cleanly on SIGTERM
 
-### [receiver][security] Verify webhook signatures
+### **done** [receiver][security] Verify webhook signatures (#8)
 Validate `X-Hub-Signature-256` using HMAC-SHA256 with a constant-time compare. Reject missing or invalid signatures with 401 before parsing the body.
-- [ ] Table-driven tests: valid, invalid, missing, tampered body
-- [ ] Body size limit applied
+- [x] Table-driven tests: valid, invalid, missing, tampered body
+- [x] Body size limit applied
 
-### [receiver] Parse `workflow_job` events and dedupe deliveries
+### **done** [receiver] Parse `workflow_job` events and dedupe deliveries (#9)
 Parse the event types and handle only `queued` (others logged). Deduplicate on `X-GitHub-Delivery` (in-memory first, interface for a store later) so retries do not start two workers.
-- [ ] Same delivery twice starts one worker
-- [ ] Unknown events return 2xx and are ignored
+- [x] Same delivery twice starts one worker
+- [x] Unknown events return 2xx and are ignored
 
-### [provisioner] GitHub API client with JIT config generation
+### **done** [provisioner] GitHub API client with JIT config generation (#10)
 Authenticate as the GitHub App (JWT then installation token) and call `generate-jitconfig` with a unique runner name and the right labels.
-- [ ] Returns an encoded JIT config for a test repo
-- [ ] Token caching and expiry handled
-- [ ] Runner name includes the job ID for traceability
+- [x] Returns an encoded JIT config for a test repo
+- [x] Token caching and expiry handled
+- [x] Runner name includes the job ID for traceability
 
-### [worker] Ephemeral Docker worker running `actions/runner`
+### **done** [worker] Ephemeral Docker worker running `actions/runner` (#11)
 Container image with the official runner. The provisioner starts it with the JIT config, it runs one job, then exits. The provisioner removes the container (`--rm` plus explicit cleanup).
-- [ ] Container is gone after the job finishes
-- [ ] Failed container start is logged with the job ID
+- [x] Container is gone after the job finishes
+- [x] Failed container start is logged with the job ID
 
-### [provisioner] Wire receiver to provisioner end to end
+### **done** [provisioner] Wire receiver to provisioner end to end (#12)
 On `queued`, call the provisioner and start the worker. Use a job queue (channel) between them so the webhook returns quickly (under 1s).
-- [ ] A `workflow_job` on the demo repo runs on a Mayfly worker
-- [ ] Webhook response does not wait on provisioning
+- [x] A `workflow_job` on the demo repo runs on a Mayfly worker
+- [x] Webhook response does not wait on provisioning
 
-### [docs] Local dev guide with a tunnel
+### **done** [docs] Local dev guide with a tunnel (#13)
 Document how to run locally and receive webhooks (smee.io, cloudflared or ngrok).
-- [ ] Steps verified from a clean checkout
+- [x] Steps verified from a clean checkout
+
+### **done** [infra] Set the App webhook URL automatically in local dev (#67)
+A cloudflared quick tunnel gets a new random URL on every run, so the App webhook URL had to be pasted by hand each time. Use `PATCH /app/hook/config` with the App JWT to set it once the tunnel is up.
+- [x] `make dev` sets the App webhook URL to the tunnel URL without manual steps
+- [x] The previous URL is logged, and a failed update stops the script with a clear error
+- [x] Covered by tests against a fake GitHub API
+
+### [ci] Release automatically on push to main from a VERSION file
+Publish a GitHub Release whenever `main` is pushed with a version that has no tag yet. The version comes from a `VERSION` file bumped in the milestone PR (decision 010). M1 ships as v0.1.0.
+- [ ] Push to `main` with a new `VERSION` creates tag `v<VERSION>` and a GitHub Release with notes
+- [ ] Release has `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] Push to `main` without a version change publishes nothing
+- [ ] `mayfly --version` prints the release version
+- [ ] Dry run on a branch builds everything and publishes nothing
 
 ## M2 - Reliability and one-command deploy
 

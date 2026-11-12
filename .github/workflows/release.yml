@@ -1,0 +1,112 @@
+name: release
+
+# Publishes v<VERSION> on push to main when that tag does not exist yet (decision 010).
+# Pull requests that touch release inputs run the build as a dry run and publish nothing.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - VERSION
+      - scripts/build-release.sh
+      - .github/workflows/release.yml
+      - cmd/mayfly/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      exists: ${{ steps.version.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Read version and check for an existing tag
+        id: version
+        run: |
+          v="$(tr -d '[:space:]' < VERSION)"
+          tag="v$v"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            exists=true
+          else
+            exists=false
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
+          echo "version $tag, tag exists: $exists"
+
+      - run: make test
+
+      - name: Build release archives
+        run: ./scripts/build-release.sh dist
+
+      - name: Check the binary reports the version
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          tar -xzf "dist/mayfly_${TAG#v}_linux_amd64.tar.gz" -C "$RUNNER_TEMP" mayfly
+          got="$("$RUNNER_TEMP/mayfly" --version)"
+          [ "v$got" = "$TAG" ] || { echo "binary says $got, want ${TAG#v}"; exit 1; }
+          (cd dist && sha256sum -c SHA256SUMS)
+
+      - name: Summary
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          EXISTS: ${{ steps.version.outputs.exists }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          {
+            echo "## Release $TAG"
+            if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ] && [ "$EXISTS" = false ]; then
+              echo "Will publish."
+            elif [ "$EXISTS" = true ]; then
+              echo "Tag already exists: nothing to publish."
+            else
+              echo "Dry run ($EVENT on $REF): nothing published."
+            fi
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build.outputs.exists == 'false'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Create the tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --generate-notes
