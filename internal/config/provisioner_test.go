@@ -43,11 +43,13 @@ func TestLoadProvisioner(t *testing.T) {
 			name: "overrides",
 			env: with(map[string]string{
 				"MAYFLY_GITHUB_API_URL": "http://gh.local", "MAYFLY_DOCKER_SOCKET": "/tmp/d.sock",
-				"MAYFLY_WORKER_IMAGE": "img:1", "MAYFLY_WORKER_TIMEOUT": "1h", "MAYFLY_WORKERS": "4", "MAYFLY_QUEUE_SIZE": "10",
+				"MAYFLY_WORKER_IMAGE": "img:1", "MAYFLY_WORKER_NETWORK": "mayfly-workers",
+				"MAYFLY_WORKER_TIMEOUT": "1h", "MAYFLY_WORKERS": "4", "MAYFLY_QUEUE_SIZE": "10",
 			}),
 			want: ProvisionerConfig{
 				AppID: 5714458, AppKey: []byte("PEM-BYTES"), GitHubAPIURL: "http://gh.local",
-				DockerSocket: "/tmp/d.sock", WorkerImage: "img:1", WorkerTimeout: time.Hour, Workers: 4, QueueSize: 10,
+				DockerSocket: "/tmp/d.sock", WorkerImage: "img:1", WorkerNetwork: "mayfly-workers",
+				WorkerTimeout: time.Hour, Workers: 4, QueueSize: 10,
 			},
 		},
 		{name: "missing app id", env: map[string]string{"MAYFLY_APP_KEY_FILE": "/key.pem"}, wantErr: true},

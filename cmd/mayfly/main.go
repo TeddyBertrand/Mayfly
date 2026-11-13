@@ -3,12 +3,15 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/config"
 	"github.com/TeddyBertrand/Mayfly/internal/github"
@@ -25,6 +28,9 @@ var version = "dev"
 func main() {
 	if printVersion(os.Args[1:], os.Stdout) {
 		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "--healthcheck" {
+		os.Exit(runHealthcheck())
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	logger.Info("mayfly starting", "version", version)
@@ -43,6 +49,32 @@ func printVersion(args []string, w io.Writer) bool {
 	return false
 }
 
+// runHealthcheck probes this host's receiver at MAYFLY_LISTEN_ADDR and returns the process exit code.
+func runHealthcheck() int {
+	addr := os.Getenv("MAYFLY_LISTEN_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	url, err := healthURL(addr)
+	if err == nil {
+		err = healthcheck(url, 3*time.Second)
+	}
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "healthcheck:", err)
+		return 1
+	}
+	return 0
+}
+
+// newInstanceID returns a random ID for this process; a restart gets a new one, which is how the reaper spots orphans.
+func newInstanceID() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("instance id: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
 // run builds every component and blocks until shutdown completes.
 func run(logger *slog.Logger) error {
 	rcfg, err := config.LoadReceiver(os.Getenv, os.ReadFile)
@@ -58,8 +90,14 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	instance, err := newInstanceID()
+	if err != nil {
+		return err
+	}
+	logger = logger.With("instance", instance)
+
 	gh := github.NewClient(pcfg.GitHubAPIURL, pcfg.AppID, key)
-	backend := docker.New(pcfg.DockerSocket, pcfg.WorkerImage, pcfg.WorkerTimeout, logger)
+	backend := docker.New(pcfg.DockerSocket, pcfg.WorkerImage, pcfg.WorkerNetwork, pcfg.WorkerTimeout, instance, logger)
 	prov := provisioner.New(gh, backend, rcfg.RunnerLabels, pcfg.Workers, pcfg.QueueSize, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
@@ -71,7 +109,7 @@ func run(logger *slog.Logger) error {
 		close(provDone)
 	}()
 
-	err = receiver.Run(ctx, rcfg, logger, prov.Enqueue)
+	err = receiver.Run(ctx, rcfg, logger, receiver.Handoff{OnQueued: prov.Enqueue, OnUpdate: prov.Update, Instance: instance})
 	// Stop the provisioner too if the receiver failed on its own, e.g. the port was taken.
 	stop()
 	<-provDone

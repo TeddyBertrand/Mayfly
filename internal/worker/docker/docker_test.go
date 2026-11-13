@@ -17,7 +17,7 @@ const smallImage = "busybox:1.36"
 // realBackend returns a Backend on the local Docker daemon, or skips the test when none answers.
 func realBackend(t *testing.T, image string, cmd []string, timeout time.Duration) (*Backend, *bytes.Buffer) {
 	t.Helper()
-	b := New(DefaultSocket, image, timeout, nil)
+	b := New(DefaultSocket, image, "", timeout, "test-instance", nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := b.eng.call(ctx, "ping", "GET", "/_ping", nil, nil, 200); err != nil {

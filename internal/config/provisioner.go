@@ -16,6 +16,7 @@ type ProvisionerConfig struct {
 	GitHubAPIURL  string
 	DockerSocket  string
 	WorkerImage   string
+	WorkerNetwork string
 	WorkerTimeout time.Duration
 	Workers       int
 	QueueSize     int
@@ -53,6 +54,7 @@ func LoadProvisioner(getenv func(string) string, readFile func(string) ([]byte, 
 	if v := getenv("MAYFLY_WORKER_IMAGE"); v != "" {
 		cfg.WorkerImage = v
 	}
+	cfg.WorkerNetwork = getenv("MAYFLY_WORKER_NETWORK")
 	if cfg.WorkerTimeout, err = parseDuration(getenv, "MAYFLY_WORKER_TIMEOUT", docker.DefaultTimeout); err != nil {
 		return ProvisionerConfig{}, err
 	}

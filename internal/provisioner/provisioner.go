@@ -11,6 +11,7 @@ import (
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
 	"github.com/TeddyBertrand/Mayfly/internal/receiver"
+	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
 )
 
@@ -35,8 +36,10 @@ type Provisioner struct {
 	labels  []string
 	workers int
 	queue   chan receiver.Job
+	jobs    *tracker
 	logger  *slog.Logger
 	newName func(int64) (string, error)
+	retry   retry.Policy
 }
 
 // New returns a Provisioner with workers goroutines and room for queueSize waiting jobs.
@@ -48,18 +51,41 @@ func New(jit JITIssuer, backend worker.Backend, labels []string, workers, queueS
 		labels:  runnerLabels(labels),
 		workers: workers,
 		queue:   make(chan receiver.Job, queueSize),
+		jobs:    newTracker(),
 		logger:  logger,
 		newName: github.RunnerName,
+		retry:   retry.Default,
 	}
 }
 
-// Enqueue adds job to the queue without blocking, returning ErrQueueFull when it is full.
+// Enqueue tracks job as waiting and adds it to the queue without blocking, returning ErrQueueFull
+// when it is full. A job that is already tracked is ignored.
 func (p *Provisioner) Enqueue(job receiver.Job) error {
+	if !p.jobs.add(job.ID) {
+		p.logger.Info("job already tracked, queued event ignored", "job_id", job.ID, "repo", job.Repo)
+		return nil
+	}
 	select {
 	case p.queue <- job:
 		return nil
 	default:
+		p.jobs.remove(job.ID)
 		return ErrQueueFull
+	}
+}
+
+// Update applies an in_progress or completed event to the tracked job it concerns, without blocking.
+// Cancelling a job that has not started stops its worker; events for untracked jobs are ignored.
+func (p *Provisioner) Update(action string, job receiver.Job) {
+	log := p.logger.With("action", action, "job_id", job.ID, "repo", job.Repo, "runner_name", job.RunnerName)
+	id, from, to, err := p.jobs.update(action, job)
+	switch {
+	case errors.Is(err, errUntracked):
+		log.Info("update for untracked job ignored")
+	case err != nil:
+		log.Warn("job update rejected", "tracked_job_id", id, "err", err)
+	default:
+		log.Info("job state changed", "tracked_job_id", id, "from", from.String(), "to", to.String())
 	}
 }
 
@@ -101,31 +127,73 @@ func (p *Provisioner) Run(ctx context.Context) {
 }
 
 // handle registers a JIT runner for job and runs a worker with it until the worker is gone.
+// It stops early if the job is dropped, and stops tracking the job when it returns.
 func (p *Provisioner) handle(ctx context.Context, job receiver.Job) {
 	log := p.logger.With("job_id", job.ID, "repo", job.Repo)
 	start := time.Now()
+	defer p.jobs.remove(job.ID)
 
-	name, err := p.newName(job.ID)
-	if err != nil {
-		log.Error("runner name failed", "err", err)
+	// Each worker gets its own context so a cancelled job stops only its worker.
+	wctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if err := p.jobs.begin(job.ID, cancel); err != nil {
+		log.Info("job dropped before start, skipped", "reason", err)
 		return
 	}
-	log = log.With("runner_name", name)
 
-	jitCtx, cancel := context.WithTimeout(ctx, jitTimeout)
-	cfg, err := p.jit.GenerateJITConfig(jitCtx, job.InstallationID, job.Repo, name, p.labels)
-	cancel()
+	var name string
+	var cfg github.JITConfig
+	err := retry.Do(wctx, p.retry, func(ctx context.Context) error {
+		// A fresh name per attempt: if a lost response hid a successful registration, reusing the name gets a 409.
+		n, err := p.newName(job.ID)
+		if err != nil {
+			return err
+		}
+		jitCtx, jitCancel := context.WithTimeout(ctx, jitTimeout)
+		defer jitCancel()
+		c, err := p.jit.GenerateJITConfig(jitCtx, job.InstallationID, job.Repo, n, p.labels)
+		if err != nil {
+			return err
+		}
+		name, cfg = n, c
+		return nil
+	}, func(attempt int, wait time.Duration, err error) {
+		log.Warn("jit config failed, retrying", "attempt", attempt, "wait", wait.String(), "err", err)
+	})
 	if err != nil {
+		if p.dropped(ctx, wctx) {
+			log.Info("job dropped while registering runner")
+			return
+		}
 		log.Error("jit config failed", "err", err)
 		return
 	}
+	log = log.With("runner_name", name)
 	log.Info("runner registered", "runner_id", cfg.RunnerID, "elapsed", time.Since(start).String())
 
-	if err := p.backend.Run(ctx, worker.Spec{JobID: job.ID, RunnerName: name, JITConfig: cfg.Encoded}); err != nil {
+	if err := p.jobs.ready(job.ID, name); err != nil {
+		// The registration is left on GitHub; the reaper removes stale runners.
+		log.Info("job dropped after runner registration, worker not started", "reason", err)
+		return
+	}
+
+	if err := p.backend.Run(wctx, worker.Spec{
+		JobID: job.ID, RunnerName: name, JITConfig: cfg.Encoded,
+		Repo: job.Repo, InstallationID: job.InstallationID, RunnerID: cfg.RunnerID,
+	}); err != nil {
+		if p.dropped(ctx, wctx) {
+			log.Info("worker stopped, job cancelled before it started")
+			return
+		}
 		log.Error("worker failed", "err", err)
 		return
 	}
 	log.Info("job done", "elapsed", time.Since(start).String())
+}
+
+// dropped reports whether wctx was cancelled by a job update rather than by shutdown of ctx.
+func (p *Provisioner) dropped(ctx, wctx context.Context) bool {
+	return wctx.Err() != nil && ctx.Err() == nil
 }
 
 // runnerLabels returns the base labels followed by extra, without case-insensitive duplicates.

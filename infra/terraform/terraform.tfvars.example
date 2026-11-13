@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars (gitignored). Only ssh_allowed_cidr is required.
+ssh_allowed_cidr = "203.0.113.7/32"
+
+# Benchmark days: a 4 GB size, then back to the free default.
+# vm_size = "Standard_B2als_v2"

@@ -42,7 +42,7 @@ GitHub --webhook--> Receiver --> Provisioner --> Worker (JIT runner, 1 job)
 
 - Language: Go (or Python)
 - Infra as code: Terraform
-- Compute: small bare-metal or cloud server (e.g. Hetzner), Docker first, Firecracker microVMs as a stretch goal
+- Compute: small bare-metal or cloud server (Azure VM created on demand, see decision 014), Docker first, Firecracker microVMs as a stretch goal
 - Observability: Prometheus + Grafana
 - CI for the project itself: GitHub Actions running on its own runner
 

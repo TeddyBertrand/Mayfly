@@ -12,6 +12,10 @@ type Spec struct {
 	JobID      int64
 	RunnerName string
 	JITConfig  string
+	// Repo, InstallationID and RunnerID let the reaper look the runner up on GitHub.
+	Repo           string
+	InstallationID int64
+	RunnerID       int64
 }
 
 // LogValue hides the JIT config so a Spec can be logged safely.

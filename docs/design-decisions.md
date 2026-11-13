@@ -103,3 +103,71 @@ Each entry records one decision, the options considered and the consequences. En
   - **C. release-please:** computes the version from commit types and opens a release PR. Fully derived, but adds a third-party action and bot commits typed `chore`, which the commit rules do not allow, and does not know the `refacto` type.
 - **Decision:** A. A `VERSION` file and a release workflow on push to `main`, with a manual dry run.
 - **Consequences:** Releasing a milestone means bumping `VERSION` in the `dev` to `main` PR; forgetting it publishes nothing, which is safe. A push to `main` without a bump is a no-op. The version is stamped into the binary at build time. Release notes come from GitHub's generated list of merged PRs. Revisit if releases need signing or container images.
+
+## 011. Worker state kept in memory
+- **Date:** 2026-11-13
+- **Status:** accepted
+- **Context:** #17 tracks each job's worker through `waiting`, `provisioning`, `ready`, `running`, `done` and `dropped` (see `docs/state-machine.md`), so that `in_progress` and `completed` events can update it and a cancelled job can stop its worker. That state has to live somewhere.
+- **Options considered:**
+  - **A. In memory:** a map from job ID to state, guarded by a mutex, inside the provisioner. No dependency, simple and fast. Lost on restart.
+  - **B. SQLite or a state file:** survives a restart. Adds a dependency and on-disk state to manage, and does not help much, since a restarted process cannot reattach to running containers anyway.
+- **Decision:** A. In-memory state, matching the in-memory deduper.
+- **Consequences:** A restart forgets every job. Containers left behind are found by their `mayfly.job_id` label and removed by the reaper (#14), and stale runner registrations are deleted by #15. Revisit if Mayfly runs as several replicas, which would need shared state.
+
+## 012. Orphaned workers detected by owner instance ID
+- **Date:** 2026-11-13
+- **Status:** accepted
+- **Context:** #14 must remove workers nobody manages any more, including after the provisioner is killed mid-job. In that case the container keeps running and its runner stays online and busy on GitHub, so neither a max age nor a GitHub status check notices it. The reaper is a separate binary and needs a way to tell whether the process that started a worker is still alive.
+- **Options considered:**
+  - **A. Owner instance ID:** mayfly picks a random ID at boot, labels each container with it (`mayfly.owner`) and reports it on `/healthz`. The reaper removes containers whose owner is not the live instance. A restart is caught in one cycle; an unreachable owner only counts after several missed probes in a row. No dependency.
+  - **B. Let it finish:** treat a crash as harmless, since the container ends with its job and `AutoRemove` cleans it up. Kind to the job, but leaves unmanaged workers and fails the acceptance criterion.
+  - **C. Startup sweep:** mayfly removes every labelled container when it starts. Simple, but does nothing if mayfly never comes back.
+  - **D. Lease file:** mayfly touches a file every few seconds. Ties both processes to a shared path and cannot tell a restarted process from the old one.
+- **Decision:** A, combined with a max age (`MAYFLY_WORKER_MAX_AGE`, must exceed the worker timeout) and a GitHub check (registration gone, or runner offline after a grace period).
+- **Consequences:** A job running when mayfly restarts is killed and fails on GitHub, so it must be rerun; that is the price of never leaving unmanaged workers. The reaper only removes on positive evidence: a GitHub error or a single missed probe keeps the worker for the next cycle. The reaper needs the GitHub App key, with the same permissions as the provisioner. Containers from versions before this decision have no owner label and are removed as orphans.
+
+## 013. Stuck jobs are logged, not retried
+- **Date:** 2026-11-13
+- **Status:** accepted
+- **Context:** #15 must handle a mayfly job stuck in `queued` with no worker, for example one that was in mayfly's in-memory queue when it crashed. The reaper is a separate process: it can see the job on GitHub, but it cannot put it back in mayfly's queue.
+- **Options considered:**
+  - **A. Log with a reason:** log the job ID, URL, age and a reason (`mayfly unreachable`, or `not picked up` when mayfly is up), once per job. No new moving parts.
+  - **B. Redeliver the webhook:** ask GitHub to resend the original `queued` delivery, which then goes through the normal signed path. Needs a search through recent deliveries for the job, and the receiver's dedupe drops it if mayfly still remembers that delivery ID, so it only helps after a restart.
+  - **C. Internal enqueue endpoint:** the reaper calls a mayfly endpoint to re-enqueue the job. Most direct, but adds an attack surface and a shared secret between the two processes.
+- **Decision:** A. Retrying can be added once real runs show how often jobs get stuck and why.
+- **Consequences:** A stuck job needs a human to rerun or redeliver it. The log line gives everything needed to do that. Detecting stuck jobs costs one listing of queued runs, plus one call per queued run, per repository and sweep.
+
+## 014. Azure for Students host, created on demand
+- **Date:** 2026-11-13
+- **Status:** accepted (replaces the Hetzner assumption in decision 002 and the brief)
+- **Context:** M2 needs a real host built by `terraform apply`. The owner has an Azure for Students subscription: $100 of credit for 12 months, no card, and a hard spending limit that disables resources when the credit runs out. Hetzner would cost real money (about €5 per month for the server, about €5 more for an S3 bucket to hold remote state). The host is only needed for benchmarks and CI-heavy sprints.
+- **Options considered:**
+  - **A. Hetzner, local state:** simplest resource model (server, firewall, SSH key), but paid and state lives on one laptop.
+  - **B. Azure, always on:** free to the owner, but a 4 GB VM (about $30 per month) uses up the yearly credit in about three months.
+  - **C. Azure, on demand:** the host exists only while in use. `terraform destroy` after each session, and `apply` rebuilds it in minutes. Default size is the free-tier `Standard_B2ats_v2`, with a bigger size passed as a variable on benchmark days.
+- **Decision:** C. Terraform state lives in Azure Blob Storage (`azurerm` backend, with locking) in a storage account created once by an idempotent `az` script (`infra/bootstrap/bootstrap.sh`), so the state has no state of its own to lose. Locally, Terraform authenticates through the Azure CLI login; no service principal until CI runs Terraform.
+- **Consequences:** More resources to manage than Hetzner (resource group, VNet, subnet, NSG, public IP, NIC, VM). The deploy must be fully reproducible, because the host is rebuilt often. Docker Compose is the deploy unit used locally day to day; Terraform only builds the host, and cloud-init runs the same Compose file there. The webhook URL changes with each new public IP unless it gets a DNS name. The Azure metadata service at 169.254.169.254 must be blocked for workers, like every internal range. Firecracker (stretch goal) needs nested virtualization, which B-series sizes lack. Revisit if the credit runs out or the subscription type changes.
+
+## 015. Container packaging for the Compose deploy
+- **Date:** 2026-11-13
+- **Status:** accepted
+- **Context:** #80 runs mayfly and the reaper with Docker Compose, locally and on the cloud host. Both are static Go binaries that need the host Docker socket, and the images must run as non-root and be published from the release workflow.
+- **Options considered:**
+  - **Base image:** `distroless/static` (CA certs, tzdata, a nonroot user, no shell), `scratch` (empty, certs and user added by hand), or `alpine` (shell for debugging, more attack surface).
+  - **Image count:** one image holding both binaries, or one image per binary.
+  - **Socket access:** add the container user to the host's docker group by GID, run as root, or put a socket proxy in front of the daemon.
+  - **Publishing:** Docker's official GitHub Actions, or plain `docker buildx` commands in `run:` steps.
+- **Decision:** `distroless/static`, one image with both binaries (Compose picks the command), `group_add` with the host docker GID from a `DOCKER_GID` variable, and Docker's official actions to push multi-arch images to GHCR.
+- **Consequences:** No shell in the image, so debugging uses `docker debug` or the logs. mayfly and the reaper always ship at the same version. `DOCKER_GID` must be set per host (`getent group docker`), and cloud-init computes it. Socket access is still root-equivalent on the host: non-root limits what a bug in mayfly can do outside the API, not through it. Revisit with a socket proxy if mayfly ever runs untrusted input closer to the daemon.
+
+## 016. Cloud host region, webhook TLS and worker egress
+- **Date:** 2026-11-13
+- **Status:** accepted
+- **Context:** #19 builds the Azure host. The subscription policy allows five regions, but only `denmarkeast` offers B-series sizes to this subscription, with quota for `Basv2` (10 vCPU) and `BS` (4 vCPU) under a 6 vCPU regional cap; D v5 sizes have 0 quota. GitHub must reach the webhook from the internet, and workers run untrusted job code next to the host and Azure's internal endpoints.
+- **Options considered:**
+  - **Region:** `denmarkeast`, or `belgiumcentral` (only D v4, no free tier).
+  - **Webhook transport:** HTTPS through Caddy with an automatic Let's Encrypt certificate for the public IP's Azure DNS name (ports 80 and 443), plain HTTP on 8080, or a cloudflared tunnel with no inbound port.
+  - **Egress enforcement:** host `iptables` rules on the worker bridge, installed by a minimal cloud-init in #19, or deferred to #20. An NSG cannot tell container traffic from host traffic and never sees traffic to 169.254.169.254 or 168.63.129.16.
+  - **SSH source address:** a `ssh_allowed_cidr` variable, or auto-detection through an external "what is my IP" service.
+- **Decision:** `denmarkeast`; HTTPS through Caddy (added to the Compose deploy in #20); `iptables` rules in the `DOCKER-USER` and `INPUT` chains for the `mayfly-workers` bridge, applied by a systemd unit from cloud-init in #19; SSH allowed only from `ssh_allowed_cidr`.
+- **Consequences:** The NSG opens 22 (one address), 80 and 443. The HMAC signature still authenticates deliveries; TLS adds confidentiality. Workers can reach the internet but not the host, the VNet, private ranges, link-local addresses (instance metadata) or the Azure wire server (168.63.129.16); DNS keeps working because Docker's embedded resolver forwards from the host namespace. The DNS name stays the same across rebuilds, so the App webhook URL is set once. Firecracker needs a D v5 quota request first. The SSH rule must be updated when the owner's IP changes.

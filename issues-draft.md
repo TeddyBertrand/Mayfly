@@ -79,45 +79,61 @@ A cloudflared quick tunnel gets a new random URL on every run, so the App webhoo
 - [x] The previous URL is logged, and a failed update stops the script with a clear error
 - [x] Covered by tests against a fake GitHub API
 
-### [ci] Release automatically on push to main from a VERSION file
+### **done** [ci] Release automatically on push to main from a VERSION file (#70)
 Publish a GitHub Release whenever `main` is pushed with a version that has no tag yet. The version comes from a `VERSION` file bumped in the milestone PR (decision 010). M1 ships as v0.1.0.
-- [ ] Push to `main` with a new `VERSION` creates tag `v<VERSION>` and a GitHub Release with notes
-- [ ] Release has `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] Push to `main` with a new `VERSION` creates tag `v<VERSION>` and a GitHub Release with notes
+- [x] Release has `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
 - [ ] Push to `main` without a version change publishes nothing
-- [ ] `mayfly --version` prints the release version
-- [ ] Dry run on a branch builds everything and publishes nothing
+- [x] `mayfly --version` prints the release version
+- [x] Dry run on a branch builds everything and publishes nothing
 
 ## M2 - Reliability and one-command deploy
 
-### [reaper] Reaper for orphaned workers
+### **done** [reaper] Reaper for orphaned workers (#14)
 Periodic loop that lists workers (by label) and removes any that exceed a max age, or whose runner is offline on GitHub's side.
-- [ ] Killing the provisioner mid-job leaves no worker after one reaper cycle
-- [ ] Max age configurable
+- [x] Killing the provisioner mid-job leaves no worker after one reaper cycle
+- [x] Max age configurable
 
-### [reaper] Reaper for stuck jobs and stale runner registrations
+### **done** [reaper] Reaper for stuck jobs and stale runner registrations (#15)
 Detect jobs stuck in `queued` with no worker, and delete stale runner registrations through the API.
-- [ ] Stale registrations are removed
-- [ ] Stuck job triggers a retry or is logged with a reason
+- [x] Stale registrations are removed
+- [x] Stuck job triggers a retry or is logged with a reason
 
-### [provisioner] Retries and backoff
+### **done** [provisioner] Retries and backoff (#16)
 Retry JIT config and container start with exponential backoff and jitter. Respect GitHub rate limits (`Retry-After`).
-- [ ] Injected failures in tests are retried and finally given up with a clear error
+- [x] Injected failures in tests are retried and finally given up with a clear error
 
-### [provisioner] State handling for all `workflow_job` actions
+### **done** [provisioner] State handling for all `workflow_job` actions (#17)
 Handle `in_progress`, `completed` and cancelled: mark worker state, clean up on `completed`, and drop the pending worker if the job is cancelled before it starts.
-- [ ] A worker state machine is documented and tested
+- [x] A worker state machine is documented and tested
 
-### [provisioner] Concurrency cap and queueing
+### **done** [provisioner] Concurrency cap and queueing (#18)
 Max concurrent workers from config. Excess jobs wait in a queue with a bounded size.
-- [ ] Cap enforced under a burst of 20 jobs
+- [x] Cap enforced under a burst of 20 jobs
 
-### [infra] Terraform: host, network and firewall
+### **done** [infra] Docker Compose deploy (#80)
+Package mayfly and the reaper as container images and run them with one `compose.yaml`, the single deploy unit used both locally and on the cloud host (decision 014). Secrets are Compose secrets mounted as files, matching the `*_FILE` settings. Both services reach the host Docker daemon through the socket, and workers attach to a dedicated `mayfly-workers` network. A `tunnel` profile adds cloudflared for local use. Images are published to GHCR by the release workflow.
+- [x] `docker compose up` runs mayfly and the reaper, and a demo job runs on a worker
+- [x] `docker compose down` leaves no worker containers or runner registrations behind
+- [x] Secrets never appear in the image, the Compose file or `docker inspect` environment
+- [x] Images are multi-stage, run as a non-root user, and have a `/healthz` healthcheck
+- [ ] A release pushes `ghcr.io/teddybertrand/mayfly:<version>` for amd64 and arm64
+- [x] Local dev guide covers the Compose path next to `make dev`
+
+### **done** [infra] Terraform: host, network and firewall (#19)
 Provision the server, a firewall allowing only the webhook port and SSH from the user's IP, and a Docker network for workers with no route to internal resources.
-- [ ] `terraform apply` creates the host
-- [ ] Worker egress limited as documented
+- [x] `terraform apply` creates the host
+- [x] Worker egress limited as documented
+
+### [ci] Release v0.2.0 (#83)
+Publish v0.2.0 (decision 010) so the cloud host can pull a pinned image for #20. Contains the M2 work so far: reaper, retries, worker state machine, concurrency cap, Docker Compose deploy (#80) and the Azure host (#19). #20 follows as v0.2.1.
+- [ ] `VERSION` is `0.2.0` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.2.0` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.2.0` published for amd64 and arm64, and pullable by the host
+- [ ] `mayfly --version` in the image prints `0.2.0`
 
 ### [infra] Terraform: bootstrap and secrets
-Cloud-init installs Docker and the Mayfly binary as a systemd service. Secrets (webhook secret, App key) are injected without being committed.
+Cloud-init installs Docker, applies the worker egress rules, and starts the Compose deploy with a pinned image version. Secrets (webhook secret, App key) are injected without being committed.
 - [ ] From a clean account, `terraform apply` yields a working system
 - [ ] `terraform destroy` removes everything
 

@@ -93,10 +93,26 @@ Expected output (JSON, one line each): `receiver listening` and `provisioner sta
 | `MAYFLY_WORKERS` | `2` | Jobs provisioned in parallel |
 | `MAYFLY_QUEUE_SIZE` | `100` | Jobs waiting before the receiver answers 503 |
 | `MAYFLY_WORKER_IMAGE` | `ghcr.io/actions/actions-runner:2.338.2` | Worker image |
+| `MAYFLY_WORKER_NETWORK` | Docker default `bridge` | Docker network workers attach to; mayfly creates it (bridge interface of the same name) when missing |
 | `MAYFLY_WORKER_TIMEOUT` | `6h` | Maximum worker lifetime |
 | `MAYFLY_DOCKER_SOCKET` | `/var/run/docker.sock` | Docker daemon socket |
 | `MAYFLY_GITHUB_API_URL` | `https://api.github.com` | GitHub API base URL |
 | `MAYFLY_SHUTDOWN_TIMEOUT` | `10s` | Time to drain HTTP requests on SIGTERM |
+
+Make targets for running jobs, crashing mayfly and checking cleanup are described in [makefile.md](makefile.md), with step-by-step recipes for the smoke and orphan tests.
+
+The reaper (`make reaper`, with the same App defaults as `make dev`) reads the App, Docker and worker timeout variables above, plus:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MAYFLY_REAPER_INTERVAL` | `1m` | Time between sweeps |
+| `MAYFLY_WORKER_MAX_AGE` | worker timeout + `15m` | Workers older than this are removed; must exceed `MAYFLY_WORKER_TIMEOUT` |
+| `MAYFLY_REAPER_GRACE` | `2m` | Younger workers skip the GitHub runner check, since their runner may still be booting |
+| `MAYFLY_REAPER_MISSED_PROBES` | `2` | Sweeps in a row `/healthz` must fail before its workers are removed |
+| `MAYFLY_HEALTH_URL` | `http://127.0.0.1:8080/healthz` | Where the reaper asks mayfly for its instance ID (decision 012) |
+| `MAYFLY_REAPER_STALE_AFTER` | `10m` | How long a `mayfly-*` registration must stay offline with no container before it is deleted; must outlast an image pull |
+| `MAYFLY_REAPER_STUCK_AFTER` | `10m` | How long a mayfly job may wait in `queued` before it is logged as stuck (decision 013) |
+| `MAYFLY_RUNNER_LABELS` | `mayfly` | Same as the receiver's: which queued jobs count as mayfly's |
 
 The first job pulls the worker image (~500 MB) and is slower; later jobs reuse it.
 
@@ -151,6 +167,28 @@ gh api repos/TeddyBertrand/mayfly-demo/actions/runners --jq .total_count   # 0
 ## 7. Stop
 
 Press Ctrl-C in both terminals. Mayfly cancels running workers (their containers are removed and their jobs fail on GitHub) and drops queued jobs. Until the next run, webhook deliveries to the old tunnel URL fail; this is harmless.
+
+## Run with Docker Compose
+
+The same deploy unit as the cloud host (decisions 014 and 015): mayfly and the reaper run from one image, with the secrets mounted as files. Needs Docker Compose v2 and the one-time setup above; Go and cloudflared are not needed on the host.
+
+1. Copy `.env.example` to `.env` (gitignored) and fill it in. `MAYFLY_UID` must own the secret files (`id -u`), and `DOCKER_GID` comes from `getent group docker | cut -d: -f3`.
+2. Start everything behind a tunnel and point the App webhook at it:
+
+   ```bash
+   make compose-dev
+   ```
+
+   This builds the image, waits for mayfly's healthcheck, reads the tunnel hostname from cloudflared's `/quicktunnel` endpoint, and runs `setwebhook` from the image.
+3. Run `make smoke`, then stop with `make compose-down`. mayfly removes its workers on SIGTERM; Compose waits up to a minute for it.
+
+Without the tunnel, `docker compose up -d` runs mayfly and the reaper only, for example on a host with a public address. Workers attach to the `mayfly-workers` network, which mayfly creates on first use. To run a published release instead of a local build, set `MAYFLY_VERSION` to its version and run `docker compose pull`.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `required variable ... is missing` | `.env` not filled in | Copy `.env.example` and set every value |
+| `permission denied` on `/run/secrets/...` | `MAYFLY_UID` does not own the secret files | Set it to the owner's UID (`stat -c %u <file>`) |
+| `permission denied` on `docker.sock` | Wrong `DOCKER_GID` | Use the GID from `getent group docker` |
 
 ## Troubleshooting
 

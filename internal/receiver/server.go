@@ -1,6 +1,7 @@
 package receiver
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -18,20 +19,33 @@ type Webhook struct {
 	Dedupe Deduper
 	// OnQueued hands a job off without blocking; an error means it was not accepted.
 	OnQueued func(Job) error
+	// OnUpdate passes an in_progress or completed job on without blocking.
+	OnUpdate func(action string, job Job)
+	// Instance is reported on /healthz.
+	Instance string
+}
+
+// Health is the /healthz response body.
+type Health struct {
+	Status   string `json:"status"`
+	Instance string `json:"instance"`
 }
 
 // NewHandler returns the receiver routes: GET /healthz and POST /webhook.
 func NewHandler(logger *slog.Logger, wh Webhook) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealthz)
+	mux.HandleFunc("GET /healthz", handleHealthz(wh.Instance))
 	mux.HandleFunc("POST /webhook", handleWebhook(logger, wh))
 	return mux
 }
 
-// handleHealthz reports that the process is up; it must not depend on external services.
-func handleHealthz(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte("ok\n"))
+// handleHealthz reports that the process is up and which instance it is; it must not depend on external services.
+func handleHealthz(instance string) http.HandlerFunc {
+	body, _ := json.Marshal(Health{Status: "ok", Instance: instance})
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}
 }
 
 // handleWebhook reads the body under a size limit, rejects it unless signed, then dispatches it.
@@ -90,7 +104,9 @@ func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte)
 	}
 	log = log.With("action", action, "job_id", job.ID, "repo", job.Repo)
 
-	if action != "queued" {
+	switch action {
+	case "queued", "in_progress", "completed":
+	default:
 		log.Info("workflow_job action ignored")
 		return http.StatusAccepted
 	}
@@ -103,6 +119,11 @@ func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte)
 		return http.StatusAccepted
 	}
 
+	if action != "queued" {
+		wh.OnUpdate(action, job)
+		log.Info("workflow_job update handed off", "runner_name", job.RunnerName, "conclusion", job.Conclusion)
+		return http.StatusAccepted
+	}
 	if err := wh.OnQueued(job); err != nil {
 		// Un-mark the delivery so GitHub's redelivery is not dropped as a duplicate.
 		wh.Dedupe.Forget(delivery)

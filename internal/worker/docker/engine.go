@@ -35,6 +35,23 @@ func (e *engineError) Error() string {
 	return fmt.Sprintf("docker %s: %d %s", e.Op, e.Status, e.Message)
 }
 
+// Temporary reports whether the daemon failed on its side (5xx), so the same request may work later.
+func (e *engineError) Temporary() bool {
+	return e.Status >= http.StatusInternalServerError
+}
+
+// connError is a request that got no answer from the daemon, for example while it restarts.
+type connError struct{ err error }
+
+// Error implements error.
+func (e *connError) Error() string { return e.err.Error() }
+
+// Unwrap returns the underlying transport error.
+func (e *connError) Unwrap() error { return e.err }
+
+// Temporary reports true: the daemon may be back on the next attempt.
+func (e *connError) Temporary() bool { return true }
+
 // isNotFound reports whether err is a 404 from the daemon.
 func isNotFound(err error) bool {
 	var e *engineError
@@ -59,7 +76,8 @@ type containerSpec struct {
 	Env        []string          `json:"Env"`
 	Labels     map[string]string `json:"Labels"`
 	HostConfig struct {
-		AutoRemove bool `json:"AutoRemove"`
+		AutoRemove  bool   `json:"AutoRemove"`
+		NetworkMode string `json:"NetworkMode,omitempty"`
 	} `json:"HostConfig"`
 }
 
@@ -112,7 +130,7 @@ func (e *engine) createContainer(ctx context.Context, name string, spec containe
 func (e *engine) waitRemoved(ctx context.Context, id string) (func() (int, error), error) {
 	resp, err := e.send(ctx, http.MethodPost, "/containers/"+id+"/wait?condition=removed", nil)
 	if err != nil {
-		return nil, fmt.Errorf("docker wait: %w", err)
+		return nil, &connError{fmt.Errorf("docker wait: %w", err)}
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
@@ -155,6 +173,32 @@ func (e *engine) removeContainer(ctx context.Context, id string) error {
 	return err
 }
 
+// networkExists reports whether a network called name exists.
+func (e *engine) networkExists(ctx context.Context, name string) (bool, error) {
+	err := e.call(ctx, "inspect network", http.MethodGet, "/networks/"+url.PathEscape(name), nil, nil, http.StatusOK)
+	if isNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// createNetwork creates a bridge network called name whose Linux interface has the same name.
+func (e *engine) createNetwork(ctx context.Context, name string) error {
+	body := map[string]any{
+		"Name":    name,
+		"Driver":  "bridge",
+		"Options": map[string]string{"com.docker.network.bridge.name": name},
+		"Labels":  map[string]string{"mayfly.role": "workers"},
+	}
+	err := e.call(ctx, "create network", http.MethodPost, "/networks/create", body, nil, http.StatusCreated)
+	var ee *engineError
+	if errors.As(err, &ee) && ee.Status == http.StatusConflict {
+		// 409: another mayfly created it first.
+		return nil
+	}
+	return err
+}
+
 // containerExists reports whether a container with this ID or name exists.
 func (e *engine) containerExists(ctx context.Context, idOrName string) (bool, error) {
 	err := e.call(ctx, "inspect container", http.MethodGet, "/containers/"+idOrName+"/json", nil, nil, http.StatusOK)
@@ -168,7 +212,7 @@ func (e *engine) containerExists(ctx context.Context, idOrName string) (bool, er
 func (e *engine) call(ctx context.Context, op, method, path string, in, out any, want int) error {
 	resp, err := e.send(ctx, method, path, in)
 	if err != nil {
-		return fmt.Errorf("docker %s: %w", op, err)
+		return &connError{fmt.Errorf("docker %s: %w", op, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != want {
