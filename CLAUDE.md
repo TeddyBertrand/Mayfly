@@ -63,8 +63,8 @@ Commit only when the owner asks.
 Every PR is linked to the issue it implements, and merging the PR closes that issue.
 
 - **Always link.** Put a closing keyword on its own line in the PR body: `Closes #<number>`. Use one keyword per issue (`Closes #12`, `Closes #13`), because `Closes #12, #13` only closes the first.
-- **Closing is automatic.** GitHub closes the issue when the PR is merged into the default branch (`main`). Never close issues by hand, and never merge a PR that is missing the link.
+- **Closing is automatic.** On `main`, GitHub closes the issue natively. On `dev`, the `close-issues` workflow (`.github/workflows/close-issues.yml`) closes it on merge. It only matches `close`/`fix`/`resolve` keywords (`Closes`, `Fixes`, `Resolves`...), never `Refs`. Never close issues by hand, and never merge a PR that is missing the link.
 - **No issue yet?** Create it first (or ask the owner), then link it. Work without an issue does not get a PR.
-- **Stacked PRs.** Closing keywords only fire for PRs targeting `main`. For a PR targeting another branch, still reference the issue (`Refs #<number>`), and put the `Closes` line on the PR that lands on `main`.
-- **Check after opening.** Confirm the issue shows the PR under "Development". `gh pr view` has no field for this, so query it: `gh api graphql -f query='{repository(owner:"TeddyBertrand",name:"Mayfly"){pullRequest(number:<N>){closingIssuesReferences(first:10){nodes{number}}}}}'` lists the issues the PR will close. It only fills for PRs into `main`; a PR into `dev` with `Refs` shows none.
+- **PRs into `dev` use `Closes #<number>` too.** Use `Refs #<number>` only for a PR that does not finish the issue, since `Refs` never closes anything.
+- **Check after opening.** Confirm the issue shows the PR under "Development". `gh pr view` has no field for this, so query it: `gh api graphql -f query='{repository(owner:"TeddyBertrand",name:"Mayfly"){pullRequest(number:<N>){closingIssuesReferences(first:10){nodes{number}}}}}'` lists the issues the PR will close. It only fills for PRs into `main`; for a PR into `dev`, check instead that the body has a `Closes #<number>` line, which is what the workflow reads.
 - The PR body still carries no AI attribution (see section 4).
