@@ -99,9 +99,9 @@ Detect jobs stuck in `queued` with no worker, and delete stale runner registrati
 - [ ] Stale registrations are removed
 - [ ] Stuck job triggers a retry or is logged with a reason
 
-### [provisioner] Retries and backoff
+### **done** [provisioner] Retries and backoff (#16)
 Retry JIT config and container start with exponential backoff and jitter. Respect GitHub rate limits (`Retry-After`).
-- [ ] Injected failures in tests are retried and finally given up with a clear error
+- [x] Injected failures in tests are retried and finally given up with a clear error
 
 ### **done** [provisioner] State handling for all `workflow_job` actions (#17)
 Handle `in_progress`, `completed` and cancelled: mark worker state, clean up on `completed`, and drop the pending worker if the job is cancelled before it starts.
