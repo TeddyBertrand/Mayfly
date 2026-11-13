@@ -1,0 +1,42 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"time"
+)
+
+// healthURL returns the /healthz URL for a receiver listening on listenAddr, dialling loopback
+// when the host part is empty or a wildcard.
+func healthURL(listenAddr string) (string, error) {
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return "", fmt.Errorf("listen address %q: %w", listenAddr, err)
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/healthz", nil
+}
+
+// healthcheck GETs url and returns an error unless it answers 200 within timeout.
+// It backs the container healthcheck, since the distroless image has no curl.
+func healthcheck(url string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: status %d", url, resp.StatusCode)
+	}
+	return nil
+}
