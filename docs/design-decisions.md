@@ -103,3 +103,13 @@ Each entry records one decision, the options considered and the consequences. En
   - **C. release-please:** computes the version from commit types and opens a release PR. Fully derived, but adds a third-party action and bot commits typed `chore`, which the commit rules do not allow, and does not know the `refacto` type.
 - **Decision:** A. A `VERSION` file and a release workflow on push to `main`, with a manual dry run.
 - **Consequences:** Releasing a milestone means bumping `VERSION` in the `dev` to `main` PR; forgetting it publishes nothing, which is safe. A push to `main` without a bump is a no-op. The version is stamped into the binary at build time. Release notes come from GitHub's generated list of merged PRs. Revisit if releases need signing or container images.
+
+## 011. Worker state kept in memory
+- **Date:** 2026-11-13
+- **Status:** accepted
+- **Context:** #17 tracks each job's worker through `waiting`, `provisioning`, `ready`, `running`, `done` and `dropped` (see `docs/state-machine.md`), so that `in_progress` and `completed` events can update it and a cancelled job can stop its worker. That state has to live somewhere.
+- **Options considered:**
+  - **A. In memory:** a map from job ID to state, guarded by a mutex, inside the provisioner. No dependency, simple and fast. Lost on restart.
+  - **B. SQLite or a state file:** survives a restart. Adds a dependency and on-disk state to manage, and does not help much, since a restarted process cannot reattach to running containers anyway.
+- **Decision:** A. In-memory state, matching the in-memory deduper.
+- **Consequences:** A restart forgets every job. Containers left behind are found by their `mayfly.job_id` label and removed by the reaper (#13), and stale runner registrations are deleted by #14. Revisit if Mayfly runs as several replicas, which would need shared state.

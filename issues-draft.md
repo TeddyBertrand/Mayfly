@@ -103,9 +103,9 @@ Detect jobs stuck in `queued` with no worker, and delete stale runner registrati
 Retry JIT config and container start with exponential backoff and jitter. Respect GitHub rate limits (`Retry-After`).
 - [ ] Injected failures in tests are retried and finally given up with a clear error
 
-### [provisioner] State handling for all `workflow_job` actions
+### **done** [provisioner] State handling for all `workflow_job` actions (#17)
 Handle `in_progress`, `completed` and cancelled: mark worker state, clean up on `completed`, and drop the pending worker if the job is cancelled before it starts.
-- [ ] A worker state machine is documented and tested
+- [x] A worker state machine is documented and tested
 
 ### [provisioner] Concurrency cap and queueing
 Max concurrent workers from config. Excess jobs wait in a queue with a bounded size.
