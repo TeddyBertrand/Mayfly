@@ -89,10 +89,10 @@ Publish a GitHub Release whenever `main` is pushed with a version that has no ta
 
 ## M2 - Reliability and one-command deploy
 
-### [reaper] Reaper for orphaned workers
+### **done** [reaper] Reaper for orphaned workers (#14)
 Periodic loop that lists workers (by label) and removes any that exceed a max age, or whose runner is offline on GitHub's side.
-- [ ] Killing the provisioner mid-job leaves no worker after one reaper cycle
-- [ ] Max age configurable
+- [x] Killing the provisioner mid-job leaves no worker after one reaper cycle
+- [x] Max age configurable
 
 ### [reaper] Reaper for stuck jobs and stale runner registrations
 Detect jobs stuck in `queued` with no worker, and delete stale runner registrations through the API.
