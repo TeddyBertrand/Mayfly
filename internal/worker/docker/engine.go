@@ -35,6 +35,23 @@ func (e *engineError) Error() string {
 	return fmt.Sprintf("docker %s: %d %s", e.Op, e.Status, e.Message)
 }
 
+// Temporary reports whether the daemon failed on its side (5xx), so the same request may work later.
+func (e *engineError) Temporary() bool {
+	return e.Status >= http.StatusInternalServerError
+}
+
+// connError is a request that got no answer from the daemon, for example while it restarts.
+type connError struct{ err error }
+
+// Error implements error.
+func (e *connError) Error() string { return e.err.Error() }
+
+// Unwrap returns the underlying transport error.
+func (e *connError) Unwrap() error { return e.err }
+
+// Temporary reports true: the daemon may be back on the next attempt.
+func (e *connError) Temporary() bool { return true }
+
 // isNotFound reports whether err is a 404 from the daemon.
 func isNotFound(err error) bool {
 	var e *engineError
@@ -112,7 +129,7 @@ func (e *engine) createContainer(ctx context.Context, name string, spec containe
 func (e *engine) waitRemoved(ctx context.Context, id string) (func() (int, error), error) {
 	resp, err := e.send(ctx, http.MethodPost, "/containers/"+id+"/wait?condition=removed", nil)
 	if err != nil {
-		return nil, fmt.Errorf("docker wait: %w", err)
+		return nil, &connError{fmt.Errorf("docker wait: %w", err)}
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
@@ -168,7 +185,7 @@ func (e *engine) containerExists(ctx context.Context, idOrName string) (bool, er
 func (e *engine) call(ctx context.Context, op, method, path string, in, out any, want int) error {
 	resp, err := e.send(ctx, method, path, in)
 	if err != nil {
-		return fmt.Errorf("docker %s: %w", op, err)
+		return &connError{fmt.Errorf("docker %s: %w", op, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != want {

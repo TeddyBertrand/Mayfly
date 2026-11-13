@@ -28,6 +28,20 @@ type fakeEngine struct {
 	createCode  int
 	startCode   int
 	waitForever bool
+	// createFails and startFails make the first N creates or starts answer 503.
+	createFails int
+	startFails  int
+}
+
+// injectFailure reports whether this call should answer 503, counting down *left under the lock.
+func (f *fakeEngine) injectFailure(left *int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if *left > 0 {
+		*left--
+		return true
+	}
+	return false
 }
 
 // newFakeEngine returns a fakeEngine that succeeds on every call by default.
@@ -67,6 +81,10 @@ func (f *fakeEngine) handler() http.Handler {
 	})
 	mux.HandleFunc("POST "+p+"/containers/create", func(w http.ResponseWriter, r *http.Request) {
 		f.record("create")
+		if f.injectFailure(&f.createFails) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		_ = json.NewDecoder(r.Body).Decode(&f.created)
 		w.WriteHeader(f.createCode)
 		if f.createCode == http.StatusCreated {
@@ -92,6 +110,10 @@ func (f *fakeEngine) handler() http.Handler {
 	})
 	mux.HandleFunc("POST "+p+"/containers/{id}/start", func(w http.ResponseWriter, _ *http.Request) {
 		f.record("start")
+		if f.injectFailure(&f.startFails) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		w.WriteHeader(f.startCode)
 		if f.startCode == http.StatusNoContent {
 			close(f.started)
