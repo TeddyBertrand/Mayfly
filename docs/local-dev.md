@@ -98,6 +98,16 @@ Expected output (JSON, one line each): `receiver listening` and `provisioner sta
 | `MAYFLY_GITHUB_API_URL` | `https://api.github.com` | GitHub API base URL |
 | `MAYFLY_SHUTDOWN_TIMEOUT` | `10s` | Time to drain HTTP requests on SIGTERM |
 
+The reaper (`go run ./cmd/reaper`) reads the App, Docker and worker timeout variables above, plus:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MAYFLY_REAPER_INTERVAL` | `1m` | Time between sweeps |
+| `MAYFLY_WORKER_MAX_AGE` | worker timeout + `15m` | Workers older than this are removed; must exceed `MAYFLY_WORKER_TIMEOUT` |
+| `MAYFLY_REAPER_GRACE` | `2m` | Younger workers skip the GitHub runner check, since their runner may still be booting |
+| `MAYFLY_REAPER_MISSED_PROBES` | `2` | Sweeps in a row `/healthz` must fail before its workers are removed |
+| `MAYFLY_HEALTH_URL` | `http://127.0.0.1:8080/healthz` | Where the reaper asks mayfly for its instance ID (decision 012) |
+
 The first job pulls the worker image (~500 MB) and is slower; later jobs reuse it.
 
 ## 5. Open the tunnel
