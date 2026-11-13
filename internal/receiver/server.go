@@ -1,6 +1,7 @@
 package receiver
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -20,20 +21,31 @@ type Webhook struct {
 	OnQueued func(Job) error
 	// OnUpdate passes an in_progress or completed job on without blocking.
 	OnUpdate func(action string, job Job)
+	// Instance is reported on /healthz.
+	Instance string
+}
+
+// Health is the /healthz response body.
+type Health struct {
+	Status   string `json:"status"`
+	Instance string `json:"instance"`
 }
 
 // NewHandler returns the receiver routes: GET /healthz and POST /webhook.
 func NewHandler(logger *slog.Logger, wh Webhook) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealthz)
+	mux.HandleFunc("GET /healthz", handleHealthz(wh.Instance))
 	mux.HandleFunc("POST /webhook", handleWebhook(logger, wh))
 	return mux
 }
 
-// handleHealthz reports that the process is up; it must not depend on external services.
-func handleHealthz(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte("ok\n"))
+// handleHealthz reports that the process is up and which instance it is; it must not depend on external services.
+func handleHealthz(instance string) http.HandlerFunc {
+	body, _ := json.Marshal(Health{Status: "ok", Instance: instance})
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}
 }
 
 // handleWebhook reads the body under a size limit, rejects it unless signed, then dispatches it.

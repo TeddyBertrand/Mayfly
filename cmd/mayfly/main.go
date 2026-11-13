@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -43,6 +45,15 @@ func printVersion(args []string, w io.Writer) bool {
 	return false
 }
 
+// newInstanceID returns a random ID for this process; a restart gets a new one, which is how the reaper spots orphans.
+func newInstanceID() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("instance id: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
 // run builds every component and blocks until shutdown completes.
 func run(logger *slog.Logger) error {
 	rcfg, err := config.LoadReceiver(os.Getenv, os.ReadFile)
@@ -58,8 +69,14 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	instance, err := newInstanceID()
+	if err != nil {
+		return err
+	}
+	logger = logger.With("instance", instance)
+
 	gh := github.NewClient(pcfg.GitHubAPIURL, pcfg.AppID, key)
-	backend := docker.New(pcfg.DockerSocket, pcfg.WorkerImage, pcfg.WorkerTimeout, logger)
+	backend := docker.New(pcfg.DockerSocket, pcfg.WorkerImage, pcfg.WorkerTimeout, instance, logger)
 	prov := provisioner.New(gh, backend, rcfg.RunnerLabels, pcfg.Workers, pcfg.QueueSize, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
@@ -71,7 +88,7 @@ func run(logger *slog.Logger) error {
 		close(provDone)
 	}()
 
-	err = receiver.Run(ctx, rcfg, logger, receiver.Handoff{OnQueued: prov.Enqueue, OnUpdate: prov.Update})
+	err = receiver.Run(ctx, rcfg, logger, receiver.Handoff{OnQueued: prov.Enqueue, OnUpdate: prov.Update, Instance: instance})
 	// Stop the provisioner too if the receiver failed on its own, e.g. the port was taken.
 	stop()
 	<-provDone

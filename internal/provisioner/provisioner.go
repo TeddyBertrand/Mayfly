@@ -177,7 +177,10 @@ func (p *Provisioner) handle(ctx context.Context, job receiver.Job) {
 		return
 	}
 
-	if err := p.backend.Run(wctx, worker.Spec{JobID: job.ID, RunnerName: name, JITConfig: cfg.Encoded}); err != nil {
+	if err := p.backend.Run(wctx, worker.Spec{
+		JobID: job.ID, RunnerName: name, JITConfig: cfg.Encoded,
+		Repo: job.Repo, InstallationID: job.InstallationID, RunnerID: cfg.RunnerID,
+	}); err != nil {
 		if p.dropped(ctx, wctx) {
 			log.Info("worker stopped, job cancelled before it started")
 			return

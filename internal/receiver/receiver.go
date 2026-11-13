@@ -20,6 +20,8 @@ const dedupeTTL = 72 * time.Hour
 type Handoff struct {
 	OnQueued func(Job) error
 	OnUpdate func(action string, job Job)
+	// Instance is this process's instance ID, reported on /healthz so the reaper can tell who is alive.
+	Instance string
 }
 
 // Run serves the receiver on cfg.ListenAddr, handing jobs to h, until ctx is cancelled.
@@ -39,6 +41,7 @@ func serve(ctx context.Context, ln net.Listener, cfg config.ReceiverConfig, logg
 		Dedupe:   NewMemoryDeduper(dedupeTTL),
 		OnQueued: h.OnQueued,
 		OnUpdate: h.OnUpdate,
+		Instance: h.Instance,
 	}))
 
 	errCh := make(chan error, 1)
