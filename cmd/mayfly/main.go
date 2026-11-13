@@ -76,7 +76,7 @@ func run(logger *slog.Logger) error {
 	logger = logger.With("instance", instance)
 
 	gh := github.NewClient(pcfg.GitHubAPIURL, pcfg.AppID, key)
-	backend := docker.New(pcfg.DockerSocket, pcfg.WorkerImage, pcfg.WorkerTimeout, instance, logger)
+	backend := docker.New(pcfg.DockerSocket, pcfg.WorkerImage, pcfg.WorkerNetwork, pcfg.WorkerTimeout, instance, logger)
 	prov := provisioner.New(gh, backend, rcfg.RunnerLabels, pcfg.Workers, pcfg.QueueSize, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)

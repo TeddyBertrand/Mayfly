@@ -37,6 +37,7 @@ const (
 type Backend struct {
 	eng     *engine
 	image   string
+	network string
 	cmd     []string
 	timeout time.Duration
 	logger  *slog.Logger
@@ -46,10 +47,11 @@ type Backend struct {
 
 var _ worker.Backend = (*Backend)(nil)
 
-// New returns a Backend using the daemon on socket, running image, and killing workers after timeout.
-// Every container is labelled with owner, the instance ID of this process, so the reaper can spot orphans.
-func New(socket, image string, timeout time.Duration, owner string, logger *slog.Logger) *Backend {
-	return &Backend{eng: newSocketEngine(socket), image: image, cmd: []string{"./run.sh"}, timeout: timeout, logger: logger, retry: retry.Default, owner: owner}
+// New returns a Backend using the daemon on socket, running image on network (empty for Docker's default),
+// and killing workers after timeout. Every container is labelled with owner, the instance ID of this
+// process, so the reaper can spot orphans.
+func New(socket, image, network string, timeout time.Duration, owner string, logger *slog.Logger) *Backend {
+	return &Backend{eng: newSocketEngine(socket), image: image, network: network, cmd: []string{"./run.sh"}, timeout: timeout, logger: logger, retry: retry.Default, owner: owner}
 }
 
 // Run starts a runner container for spec, waits for it to finish, and always removes it.
@@ -107,6 +109,7 @@ func (b *Backend) containerSpec(spec worker.Spec) containerSpec {
 		},
 	}
 	cs.HostConfig.AutoRemove = true
+	cs.HostConfig.NetworkMode = b.network
 	return cs
 }
 
@@ -116,6 +119,10 @@ func (b *Backend) containerSpec(spec worker.Spec) containerSpec {
 func (b *Backend) start(ctx context.Context, spec worker.Spec, log *slog.Logger) (string, func() (int, error), context.CancelFunc, error) {
 	if err := b.ensureImage(ctx, log); err != nil {
 		log.Error("worker image unavailable", "err", err)
+		return "", nil, nil, err
+	}
+	if err := b.ensureNetwork(ctx, log); err != nil {
+		log.Error("worker network unavailable", "err", err, "network", b.network)
 		return "", nil, nil, err
 	}
 
@@ -151,6 +158,20 @@ func (b *Backend) ensureImage(ctx context.Context, log *slog.Logger) error {
 	}
 	log.Info("pulling worker image")
 	return b.eng.pullImage(ctx, b.image)
+}
+
+// ensureNetwork creates the worker network when one is configured and missing. The bridge interface
+// gets the network's name, so host firewall rules can match it.
+func (b *Backend) ensureNetwork(ctx context.Context, log *slog.Logger) error {
+	if b.network == "" {
+		return nil
+	}
+	ok, err := b.eng.networkExists(ctx, b.network)
+	if err != nil || ok {
+		return err
+	}
+	log.Info("creating worker network", "network", b.network)
+	return b.eng.createNetwork(ctx, b.network)
 }
 
 // remove force-removes the container with its own deadline, since the job context may be done.

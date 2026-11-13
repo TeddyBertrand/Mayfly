@@ -76,7 +76,8 @@ type containerSpec struct {
 	Env        []string          `json:"Env"`
 	Labels     map[string]string `json:"Labels"`
 	HostConfig struct {
-		AutoRemove bool `json:"AutoRemove"`
+		AutoRemove  bool   `json:"AutoRemove"`
+		NetworkMode string `json:"NetworkMode,omitempty"`
 	} `json:"HostConfig"`
 }
 
@@ -167,6 +168,32 @@ func (e *engine) removeContainer(ctx context.Context, id string) error {
 	var ee *engineError
 	if errors.As(err, &ee) && ee.Status == http.StatusConflict {
 		// 409 means AutoRemove is already deleting it.
+		return nil
+	}
+	return err
+}
+
+// networkExists reports whether a network called name exists.
+func (e *engine) networkExists(ctx context.Context, name string) (bool, error) {
+	err := e.call(ctx, "inspect network", http.MethodGet, "/networks/"+url.PathEscape(name), nil, nil, http.StatusOK)
+	if isNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// createNetwork creates a bridge network called name whose Linux interface has the same name.
+func (e *engine) createNetwork(ctx context.Context, name string) error {
+	body := map[string]any{
+		"Name":    name,
+		"Driver":  "bridge",
+		"Options": map[string]string{"com.docker.network.bridge.name": name},
+		"Labels":  map[string]string{"mayfly.role": "workers"},
+	}
+	err := e.call(ctx, "create network", http.MethodPost, "/networks/create", body, nil, http.StatusCreated)
+	var ee *engineError
+	if errors.As(err, &ee) && ee.Status == http.StatusConflict {
+		// 409: another mayfly created it first.
 		return nil
 	}
 	return err

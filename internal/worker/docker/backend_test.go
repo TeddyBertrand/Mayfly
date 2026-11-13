@@ -25,9 +25,12 @@ type fakeEngine struct {
 	created     containerSpec
 	started     chan struct{}
 	imageExists bool
-	createCode  int
-	startCode   int
-	waitForever bool
+	// networkExists and createdNetwork back the worker network endpoints.
+	networkExists  bool
+	createdNetwork map[string]any
+	createCode     int
+	startCode      int
+	waitForever    bool
 	// createFails and startFails make the first N creates or starts answer 503.
 	createFails int
 	startFails  int
@@ -78,6 +81,20 @@ func (f *fakeEngine) handler() http.Handler {
 	mux.HandleFunc("POST "+p+"/images/create", func(w http.ResponseWriter, _ *http.Request) {
 		f.record("pull")
 		_, _ = w.Write([]byte(`{"status":"Pulling"}` + "\n"))
+	})
+	mux.HandleFunc("GET "+p+"/networks/{name}", func(w http.ResponseWriter, _ *http.Request) {
+		f.record("inspect-network")
+		if !f.networkExists {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	})
+	mux.HandleFunc("POST "+p+"/networks/create", func(w http.ResponseWriter, r *http.Request) {
+		f.record("create-network")
+		_ = json.NewDecoder(r.Body).Decode(&f.createdNetwork)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"Id":"net1"}`))
 	})
 	mux.HandleFunc("POST "+p+"/containers/create", func(w http.ResponseWriter, r *http.Request) {
 		f.record("create")
@@ -249,6 +266,35 @@ func TestContainerSpec(t *testing.T) {
 	}
 	if !got.HostConfig.AutoRemove {
 		t.Error("AutoRemove not set")
+	}
+	if got.HostConfig.NetworkMode != "" {
+		t.Errorf("NetworkMode = %q, want empty (Docker default)", got.HostConfig.NetworkMode)
+	}
+
+	b.network = "mayfly-workers"
+	if got := b.containerSpec(testSpec).HostConfig.NetworkMode; got != "mayfly-workers" {
+		t.Errorf("NetworkMode = %q, want mayfly-workers", got)
+	}
+}
+
+// TestWorkerNetwork checks that a configured network is created once when missing, with a named bridge.
+func TestWorkerNetwork(t *testing.T) {
+	f := newFakeEngine()
+	b, _ := newFakeBackend(t, f, 5*time.Second)
+	b.network = "mayfly-workers"
+	if err := b.Run(context.Background(), testSpec); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"inspect-image", "inspect-network", "create-network", "create", "wait", "start", "remove"}
+	if got := f.callList(); !reflect.DeepEqual(got, want) {
+		t.Errorf("calls = %v, want %v", got, want)
+	}
+	opts, _ := f.createdNetwork["Options"].(map[string]any)
+	if f.createdNetwork["Name"] != "mayfly-workers" || opts["com.docker.network.bridge.name"] != "mayfly-workers" {
+		t.Errorf("network create body = %v", f.createdNetwork)
+	}
+	if f.created.HostConfig.NetworkMode != "mayfly-workers" {
+		t.Errorf("NetworkMode = %q", f.created.HostConfig.NetworkMode)
 	}
 }
 
