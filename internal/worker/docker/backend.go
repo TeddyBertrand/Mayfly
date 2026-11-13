@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
 )
 
@@ -33,13 +34,14 @@ type Backend struct {
 	cmd     []string
 	timeout time.Duration
 	logger  *slog.Logger
+	retry   retry.Policy
 }
 
 var _ worker.Backend = (*Backend)(nil)
 
 // New returns a Backend using the daemon on socket, running image, and killing workers after timeout.
 func New(socket, image string, timeout time.Duration, logger *slog.Logger) *Backend {
-	return &Backend{eng: newSocketEngine(socket), image: image, cmd: []string{"./run.sh"}, timeout: timeout, logger: logger}
+	return &Backend{eng: newSocketEngine(socket), image: image, cmd: []string{"./run.sh"}, timeout: timeout, logger: logger, retry: retry.Default}
 }
 
 // Run starts a runner container for spec, waits for it to finish, and always removes it.
@@ -48,28 +50,22 @@ func (b *Backend) Run(ctx context.Context, spec worker.Spec) error {
 	ctx, cancel := context.WithTimeout(ctx, b.timeout)
 	defer cancel()
 
-	if err := b.ensureImage(ctx, log); err != nil {
-		log.Error("worker image unavailable", "err", err)
+	var id string
+	var waitDone func() (int, error)
+	var stopWait context.CancelFunc
+	err := retry.Do(ctx, b.retry, func(ctx context.Context) error {
+		var err error
+		id, waitDone, stopWait, err = b.start(ctx, spec, log)
 		return err
-	}
-
-	id, err := b.eng.createContainer(ctx, spec.RunnerName, b.containerSpec(spec))
+	}, func(attempt int, wait time.Duration, err error) {
+		log.Warn("worker start failed, retrying", "attempt", attempt, "wait", wait.String(), "err", err)
+	})
 	if err != nil {
-		log.Error("worker create failed", "err", err)
 		return err
 	}
 	log = log.With("container_id", shortID(id))
+	defer stopWait()
 	defer b.remove(id, log)
-
-	waitDone, err := b.eng.waitRemoved(ctx, id)
-	if err != nil {
-		log.Error("worker wait failed", "err", err)
-		return err
-	}
-	if err := b.eng.startContainer(ctx, id); err != nil {
-		log.Error("worker start failed", "err", err)
-		return err
-	}
 	log.Info("worker started")
 
 	exit, err := waitDone()
@@ -100,6 +96,39 @@ func (b *Backend) containerSpec(spec worker.Spec) containerSpec {
 	}
 	cs.HostConfig.AutoRemove = true
 	return cs
+}
+
+// start makes sure the image is present, then creates and starts the container, as one retryable attempt.
+// On success it returns the container ID, the wait for its removal, and the function that ends that wait.
+// On failure it leaves nothing behind, so the next attempt starts clean.
+func (b *Backend) start(ctx context.Context, spec worker.Spec, log *slog.Logger) (string, func() (int, error), context.CancelFunc, error) {
+	if err := b.ensureImage(ctx, log); err != nil {
+		log.Error("worker image unavailable", "err", err)
+		return "", nil, nil, err
+	}
+
+	id, err := b.eng.createContainer(ctx, spec.RunnerName, b.containerSpec(spec))
+	if err != nil {
+		log.Error("worker create failed", "err", err)
+		return "", nil, nil, err
+	}
+
+	// The wait request gets its own context so a failed attempt can close it instead of leaking the connection.
+	wctx, stopWait := context.WithCancel(ctx)
+	fail := func(msg string, err error) (string, func() (int, error), context.CancelFunc, error) {
+		log.Error(msg, "err", err, "container_id", shortID(id))
+		stopWait()
+		b.remove(id, log)
+		return "", nil, nil, err
+	}
+	waitDone, err := b.eng.waitRemoved(wctx, id)
+	if err != nil {
+		return fail("worker wait failed", err)
+	}
+	if err := b.eng.startContainer(ctx, id); err != nil {
+		return fail("worker start failed", err)
+	}
+	return id, waitDone, stopWait, nil
 }
 
 // ensureImage pulls the image when it is not present locally.

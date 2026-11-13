@@ -11,6 +11,7 @@ import (
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
 	"github.com/TeddyBertrand/Mayfly/internal/receiver"
+	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
 )
 
@@ -38,6 +39,7 @@ type Provisioner struct {
 	jobs    *tracker
 	logger  *slog.Logger
 	newName func(int64) (string, error)
+	retry   retry.Policy
 }
 
 // New returns a Provisioner with workers goroutines and room for queueSize waiting jobs.
@@ -52,6 +54,7 @@ func New(jit JITIssuer, backend worker.Backend, labels []string, workers, queueS
 		jobs:    newTracker(),
 		logger:  logger,
 		newName: github.RunnerName,
+		retry:   retry.Default,
 	}
 }
 
@@ -138,16 +141,25 @@ func (p *Provisioner) handle(ctx context.Context, job receiver.Job) {
 		return
 	}
 
-	name, err := p.newName(job.ID)
-	if err != nil {
-		log.Error("runner name failed", "err", err)
-		return
-	}
-	log = log.With("runner_name", name)
-
-	jitCtx, jitCancel := context.WithTimeout(wctx, jitTimeout)
-	cfg, err := p.jit.GenerateJITConfig(jitCtx, job.InstallationID, job.Repo, name, p.labels)
-	jitCancel()
+	var name string
+	var cfg github.JITConfig
+	err := retry.Do(wctx, p.retry, func(ctx context.Context) error {
+		// A fresh name per attempt: if a lost response hid a successful registration, reusing the name gets a 409.
+		n, err := p.newName(job.ID)
+		if err != nil {
+			return err
+		}
+		jitCtx, jitCancel := context.WithTimeout(ctx, jitTimeout)
+		defer jitCancel()
+		c, err := p.jit.GenerateJITConfig(jitCtx, job.InstallationID, job.Repo, n, p.labels)
+		if err != nil {
+			return err
+		}
+		name, cfg = n, c
+		return nil
+	}, func(attempt int, wait time.Duration, err error) {
+		log.Warn("jit config failed, retrying", "attempt", attempt, "wait", wait.String(), "err", err)
+	})
 	if err != nil {
 		if p.dropped(ctx, wctx) {
 			log.Info("job dropped while registering runner")
@@ -156,6 +168,7 @@ func (p *Provisioner) handle(ctx context.Context, job receiver.Job) {
 		log.Error("jit config failed", "err", err)
 		return
 	}
+	log = log.With("runner_name", name)
 	log.Info("runner registered", "runner_id", cfg.RunnerID, "elapsed", time.Since(start).String())
 
 	if err := p.jobs.ready(job.ID, name); err != nil {

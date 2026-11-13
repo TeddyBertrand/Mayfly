@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -43,11 +44,51 @@ type APIError struct {
 	Path    string
 	Status  int
 	Message string
+
+	rateLimited bool
+	wait        time.Duration
 }
 
 // Error implements error.
 func (e *APIError) Error() string {
 	return fmt.Sprintf("github %s %s: %d %s", e.Method, e.Path, e.Status, e.Message)
+}
+
+// Temporary reports whether the request may succeed later: server errors and rate limits.
+func (e *APIError) Temporary() bool {
+	return e.Status >= 500 || e.Status == http.StatusTooManyRequests || e.rateLimited
+}
+
+// RetryAfter returns how long GitHub asked us to wait, or zero if it did not say.
+func (e *APIError) RetryAfter() time.Duration {
+	return e.wait
+}
+
+// netError is a request that got no answer from GitHub (connection reset, timeout). It is always worth retrying.
+type netError struct{ err error }
+
+// Error implements error.
+func (e *netError) Error() string { return e.err.Error() }
+
+// Unwrap returns the underlying transport error.
+func (e *netError) Unwrap() error { return e.err }
+
+// Temporary reports true: a lost connection says nothing about whether the request is valid.
+func (e *netError) Temporary() bool { return true }
+
+// rateLimit reads GitHub's rate-limit headers and returns whether the response is a rate limit and the wait it asks for.
+// Retry-After (secondary limits) wins; otherwise an exhausted quota waits until X-RateLimit-Reset.
+func rateLimit(h http.Header, status int, now time.Time) (bool, time.Duration) {
+	if s, err := strconv.Atoi(h.Get("Retry-After")); err == nil && s >= 0 {
+		return status == http.StatusForbidden || status == http.StatusTooManyRequests, time.Duration(s) * time.Second
+	}
+	if h.Get("X-RateLimit-Remaining") == "0" {
+		if reset, err := strconv.ParseInt(h.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+			return true, max(0, time.Unix(reset, 0).Sub(now))
+		}
+		return true, 0
+	}
+	return false, 0
 }
 
 // NewClient returns a Client for appID that signs with key and talks to baseURL.
@@ -117,7 +158,7 @@ func (c *Client) do(ctx context.Context, method, path, bearer string, in, out an
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("github %s %s: %w", method, path, err)
+		return &netError{fmt.Errorf("github %s %s: %w", method, path, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -126,7 +167,8 @@ func (c *Client) do(ctx context.Context, method, path, bearer string, in, out an
 			Message string `json:"message"`
 		}
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&e)
-		return &APIError{Method: method, Path: path, Status: resp.StatusCode, Message: e.Message}
+		limited, wait := rateLimit(resp.Header, resp.StatusCode, c.now())
+		return &APIError{Method: method, Path: path, Status: resp.StatusCode, Message: e.Message, rateLimited: limited, wait: wait}
 	}
 	if out == nil {
 		return nil

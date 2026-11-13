@@ -14,6 +14,7 @@ import (
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
 	"github.com/TeddyBertrand/Mayfly/internal/receiver"
+	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
 )
 
@@ -23,6 +24,8 @@ type fakeJIT struct {
 	names  []string
 	labels []string
 	err    error
+	// failures, when set, limits err to the first failures calls.
+	failures int
 }
 
 // GenerateJITConfig implements JITIssuer.
@@ -31,7 +34,7 @@ func (f *fakeJIT) GenerateJITConfig(_ context.Context, _ int64, _, name string, 
 	defer f.mu.Unlock()
 	f.names = append(f.names, name)
 	f.labels = labels
-	if f.err != nil {
+	if f.err != nil && (f.failures == 0 || len(f.names) <= f.failures) {
 		return github.JITConfig{}, f.err
 	}
 	return github.JITConfig{RunnerID: 1, Encoded: "SECRET-JIT"}, nil
@@ -92,6 +95,7 @@ func (s *syncBuffer) String() string {
 func newTestProvisioner(jit *fakeJIT, b *fakeBackend, workers, queue int) (*Provisioner, *syncBuffer) {
 	logs := &syncBuffer{}
 	p := New(jit, b, []string{"mayfly"}, workers, queue, slog.New(slog.NewJSONHandler(logs, nil)))
+	p.retry = retry.Policy{Attempts: 3, Base: time.Millisecond, Max: 5 * time.Millisecond}
 	return p, logs
 }
 
