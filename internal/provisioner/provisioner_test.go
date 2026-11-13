@@ -108,6 +108,13 @@ func waitStarted(t *testing.T, b *fakeBackend, n int) {
 
 var testJob = receiver.Job{ID: 4242, Repo: "octo/demo", InstallationID: 9}
 
+// jobN returns testJob with a distinct ID, since the provisioner tracks one entry per job ID.
+func jobN(i int) receiver.Job {
+	j := testJob
+	j.ID = int64(1000 + i)
+	return j
+}
+
 // TestJobRunsOnWorker checks the runner name, labels and spec passed down for one job.
 func TestJobRunsOnWorker(t *testing.T) {
 	jit, b := &fakeJIT{}, newFakeBackend(false)
@@ -166,12 +173,12 @@ func TestJITFailureSkipsWorker(t *testing.T) {
 func TestEnqueueFullDoesNotBlock(t *testing.T) {
 	p, _ := newTestProvisioner(&fakeJIT{}, newFakeBackend(true), 1, 2)
 	for i := range 2 {
-		if err := p.Enqueue(testJob); err != nil {
+		if err := p.Enqueue(jobN(i)); err != nil {
 			t.Fatalf("enqueue %d: %v", i, err)
 		}
 	}
 	start := time.Now()
-	if err := p.Enqueue(testJob); !errors.Is(err, ErrQueueFull) {
+	if err := p.Enqueue(jobN(2)); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("err = %v, want ErrQueueFull", err)
 	}
 	if time.Since(start) > 100*time.Millisecond {
@@ -187,8 +194,8 @@ func TestShutdownStopsWorkersAndDropsQueue(t *testing.T) {
 	done := make(chan struct{})
 	go func() { p.Run(ctx); close(done) }()
 
-	for range 3 {
-		_ = p.Enqueue(testJob)
+	for i := range 3 {
+		_ = p.Enqueue(jobN(i))
 	}
 	waitStarted(t, b, 2)
 	cancel()
