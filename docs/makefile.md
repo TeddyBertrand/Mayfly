@@ -83,12 +83,15 @@ make crash          # terminal 1's make dev exits; the container keeps running
 make dev            # terminal 1 again: new instance ID
 make reaper         # terminal 3: first sweep logs reason="owner instance gone"
 make workers        # empty
-make check-clean    # 0 containers; the registration is still listed, see below
+make check-clean    # 0 containers; the registration is still listed for now
+# keep make reaper running: about 10 minutes later it logs "stale registration removed"
+make check-clean    # 0 containers, 0 registrations
 ```
 
 The `mayfly-long` run on GitHub then fails ("lost communication with the server"). That is expected: a job whose worker was orphaned is killed, and must be rerun (decision 012).
 
 ## Known gaps
 
-- **Stale registration after a crash.** The reaper removes the container, not the runner registration on GitHub. After the crash recipe, `make runners` still shows the killed runner as `offline`, and `make check-clean` fails. Deleting stale registrations is issue #15. Until then, delete it by hand with the ID from `make runners`: `gh api -X DELETE repos/<DEMO_REPO>/actions/runners/<id>`.
+- **Stale registrations wait 10 minutes.** After a crash the killed runner stays registered as `offline` until the reaper has seen it stale for `MAYFLY_REAPER_STALE_AFTER`, so `make check-clean` fails until then. To check faster, run `MAYFLY_REAPER_STALE_AFTER=1m make reaper`.
+- **Stuck jobs are only logged.** A job queued for more than `MAYFLY_REAPER_STUCK_AFTER` is logged as `job stuck in queued` with a reason and its URL; rerunning it is up to you (decision 013).
 - **One mayfly at a time.** `crash` kills every mayfly started by `make dev`, and the reaper only knows the instance on `127.0.0.1:8080`.
