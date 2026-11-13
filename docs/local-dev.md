@@ -109,6 +109,9 @@ The reaper (`make reaper`, with the same App defaults as `make dev`) reads the A
 | `MAYFLY_REAPER_GRACE` | `2m` | Younger workers skip the GitHub runner check, since their runner may still be booting |
 | `MAYFLY_REAPER_MISSED_PROBES` | `2` | Sweeps in a row `/healthz` must fail before its workers are removed |
 | `MAYFLY_HEALTH_URL` | `http://127.0.0.1:8080/healthz` | Where the reaper asks mayfly for its instance ID (decision 012) |
+| `MAYFLY_REAPER_STALE_AFTER` | `10m` | How long a `mayfly-*` registration must stay offline with no container before it is deleted; must outlast an image pull |
+| `MAYFLY_REAPER_STUCK_AFTER` | `10m` | How long a mayfly job may wait in `queued` before it is logged as stuck (decision 013) |
+| `MAYFLY_RUNNER_LABELS` | `mayfly` | Same as the receiver's: which queued jobs count as mayfly's |
 
 The first job pulls the worker image (~500 MB) and is slower; later jobs reuse it.
 

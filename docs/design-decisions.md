@@ -125,3 +125,14 @@ Each entry records one decision, the options considered and the consequences. En
   - **D. Lease file:** mayfly touches a file every few seconds. Ties both processes to a shared path and cannot tell a restarted process from the old one.
 - **Decision:** A, combined with a max age (`MAYFLY_WORKER_MAX_AGE`, must exceed the worker timeout) and a GitHub check (registration gone, or runner offline after a grace period).
 - **Consequences:** A job running when mayfly restarts is killed and fails on GitHub, so it must be rerun; that is the price of never leaving unmanaged workers. The reaper only removes on positive evidence: a GitHub error or a single missed probe keeps the worker for the next cycle. The reaper needs the GitHub App key, with the same permissions as the provisioner. Containers from versions before this decision have no owner label and are removed as orphans.
+
+## 013. Stuck jobs are logged, not retried
+- **Date:** 2026-11-13
+- **Status:** accepted
+- **Context:** #15 must handle a mayfly job stuck in `queued` with no worker, for example one that was in mayfly's in-memory queue when it crashed. The reaper is a separate process: it can see the job on GitHub, but it cannot put it back in mayfly's queue.
+- **Options considered:**
+  - **A. Log with a reason:** log the job ID, URL, age and a reason (`mayfly unreachable`, or `not picked up` when mayfly is up), once per job. No new moving parts.
+  - **B. Redeliver the webhook:** ask GitHub to resend the original `queued` delivery, which then goes through the normal signed path. Needs a search through recent deliveries for the job, and the receiver's dedupe drops it if mayfly still remembers that delivery ID, so it only helps after a restart.
+  - **C. Internal enqueue endpoint:** the reaper calls a mayfly endpoint to re-enqueue the job. Most direct, but adds an attack surface and a shared secret between the two processes.
+- **Decision:** A. Retrying can be added once real runs show how often jobs get stuck and why.
+- **Consequences:** A stuck job needs a human to rerun or redeliver it. The log line gives everything needed to do that. Detecting stuck jobs costs one listing of queued runs, plus one call per queued run, per repository and sweep.

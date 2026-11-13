@@ -16,6 +16,9 @@ type ReaperConfig struct {
 	Grace        time.Duration
 	MissedProbes int
 	HealthURL    string
+	StaleAfter   time.Duration
+	StuckAfter   time.Duration
+	RunnerLabels []string
 }
 
 // LoadReaper reads the reaper settings through getenv and readFile. MAYFLY_WORKER_MAX_AGE must exceed
@@ -44,6 +47,15 @@ func LoadReaper(getenv func(string) string, readFile func(string) ([]byte, error
 	}
 	if v := getenv("MAYFLY_HEALTH_URL"); v != "" {
 		cfg.HealthURL = v
+	}
+	if cfg.StaleAfter, err = parseDuration(getenv, "MAYFLY_REAPER_STALE_AFTER", 10*time.Minute); err != nil {
+		return ReaperConfig{}, err
+	}
+	if cfg.StuckAfter, err = parseDuration(getenv, "MAYFLY_REAPER_STUCK_AFTER", 10*time.Minute); err != nil {
+		return ReaperConfig{}, err
+	}
+	if cfg.RunnerLabels, err = parseLabels(getenv("MAYFLY_RUNNER_LABELS")); err != nil {
+		return ReaperConfig{}, fmt.Errorf("MAYFLY_RUNNER_LABELS: %w", err)
 	}
 	return cfg, nil
 }
