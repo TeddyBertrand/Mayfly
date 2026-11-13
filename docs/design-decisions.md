@@ -136,3 +136,26 @@ Each entry records one decision, the options considered and the consequences. En
   - **C. Internal enqueue endpoint:** the reaper calls a mayfly endpoint to re-enqueue the job. Most direct, but adds an attack surface and a shared secret between the two processes.
 - **Decision:** A. Retrying can be added once real runs show how often jobs get stuck and why.
 - **Consequences:** A stuck job needs a human to rerun or redeliver it. The log line gives everything needed to do that. Detecting stuck jobs costs one listing of queued runs, plus one call per queued run, per repository and sweep.
+
+## 014. Azure for Students host, created on demand
+- **Date:** 2026-11-13
+- **Status:** accepted (replaces the Hetzner assumption in decision 002 and the brief)
+- **Context:** M2 needs a real host built by `terraform apply`. The owner has an Azure for Students subscription: $100 of credit for 12 months, no card, and a hard spending limit that disables resources when the credit runs out. Hetzner would cost real money (about €5 per month for the server, about €5 more for an S3 bucket to hold remote state). The host is only needed for benchmarks and CI-heavy sprints.
+- **Options considered:**
+  - **A. Hetzner, local state:** simplest resource model (server, firewall, SSH key), but paid and state lives on one laptop.
+  - **B. Azure, always on:** free to the owner, but a 4 GB VM (about $30 per month) uses up the yearly credit in about three months.
+  - **C. Azure, on demand:** the host exists only while in use. `terraform destroy` after each session, and `apply` rebuilds it in minutes. Default size is the free-tier `Standard_B2ats_v2`, with a bigger size passed as a variable on benchmark days.
+- **Decision:** C. Terraform state lives in Azure Blob Storage (`azurerm` backend, with locking) in a storage account created once by a small separate bootstrap config. Locally, Terraform authenticates through the Azure CLI login; no service principal until CI runs Terraform.
+- **Consequences:** More resources to manage than Hetzner (resource group, VNet, subnet, NSG, public IP, NIC, VM). The deploy must be fully reproducible, because the host is rebuilt often. Docker Compose is the deploy unit used locally day to day; Terraform only builds the host, and cloud-init runs the same Compose file there. The webhook URL changes with each new public IP unless it gets a DNS name. The Azure metadata service at 169.254.169.254 must be blocked for workers, like every internal range. Firecracker (stretch goal) needs nested virtualization, which B-series sizes lack. Revisit if the credit runs out or the subscription type changes.
+
+## 015. Container packaging for the Compose deploy
+- **Date:** 2026-11-13
+- **Status:** accepted
+- **Context:** #80 runs mayfly and the reaper with Docker Compose, locally and on the cloud host. Both are static Go binaries that need the host Docker socket, and the images must run as non-root and be published from the release workflow.
+- **Options considered:**
+  - **Base image:** `distroless/static` (CA certs, tzdata, a nonroot user, no shell), `scratch` (empty, certs and user added by hand), or `alpine` (shell for debugging, more attack surface).
+  - **Image count:** one image holding both binaries, or one image per binary.
+  - **Socket access:** add the container user to the host's docker group by GID, run as root, or put a socket proxy in front of the daemon.
+  - **Publishing:** Docker's official GitHub Actions, or plain `docker buildx` commands in `run:` steps.
+- **Decision:** `distroless/static`, one image with both binaries (Compose picks the command), `group_add` with the host docker GID from a `DOCKER_GID` variable, and Docker's official actions to push multi-arch images to GHCR.
+- **Consequences:** No shell in the image, so debugging uses `docker debug` or the logs. mayfly and the reaper always ship at the same version. `DOCKER_GID` must be set per host (`getent group docker`), and cloud-init computes it. Socket access is still root-equivalent on the host: non-root limits what a bug in mayfly can do outside the API, not through it. Revisit with a socket proxy if mayfly ever runs untrusted input closer to the daemon.
