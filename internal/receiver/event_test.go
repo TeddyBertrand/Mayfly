@@ -14,6 +14,12 @@ const queuedPayload = `{
   "sender": {"login": "octocat"}
 }`
 
+// completedPayload returns a trimmed workflow_job "completed" payload with the given conclusion and runner.
+func completedPayload(conclusion, runner string) string {
+	return `{"action":"completed","workflow_job":{"id":42,"run_id":7,"name":"build","labels":["self-hosted","mayfly"],` +
+		`"conclusion":"` + conclusion + `","runner_name":"` + runner + `"},"repository":{"full_name":"octo/demo"},"installation":{"id":99}}`
+}
+
 // TestParseWorkflowJob checks decoding of valid, partial and malformed payloads.
 func TestParseWorkflowJob(t *testing.T) {
 	tests := []struct {
@@ -28,6 +34,13 @@ func TestParseWorkflowJob(t *testing.T) {
 			body:       queuedPayload,
 			wantAction: "queued",
 			wantJob:    Job{ID: 42, RunID: 7, Name: "build", Repo: "octo/demo", InstallationID: 99, Labels: []string{"self-hosted", "mayfly"}},
+		},
+		{
+			name:       "completed cancelled",
+			body:       completedPayload("cancelled", "mayfly-42-ab"),
+			wantAction: "completed",
+			wantJob: Job{ID: 42, RunID: 7, Name: "build", Repo: "octo/demo", InstallationID: 99, Labels: []string{"self-hosted", "mayfly"},
+				RunnerName: "mayfly-42-ab", Conclusion: "cancelled"},
 		},
 		{"not json", `{`, "", Job{}, true},
 		{"missing job id", `{"action":"queued","workflow_job":{}}`, "", Job{}, true},

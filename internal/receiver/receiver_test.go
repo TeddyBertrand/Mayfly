@@ -31,6 +31,7 @@ func testWebhook(secret []byte, onQueued func(Job)) Webhook {
 		Labels:   []string{"mayfly"},
 		Dedupe:   NewMemoryDeduper(time.Hour),
 		OnQueued: func(j Job) error { onQueued(j); return nil },
+		OnUpdate: func(string, Job) {},
 	}
 }
 
@@ -77,36 +78,49 @@ func postSigned(h http.Handler, secret []byte, event, delivery, body string) int
 // TestWebhookDispatch checks status codes and handoffs for each kind of verified delivery.
 func TestWebhookDispatch(t *testing.T) {
 	secret := []byte("test-secret")
-	completed := strings.Replace(queuedPayload, `"queued"`, `"completed"`, 1)
+	completed := completedPayload("success", "mayfly-42-ab")
+	inProgress := strings.Replace(queuedPayload, `"queued"`, `"in_progress"`, 1)
+	waiting := strings.Replace(queuedPayload, `"queued"`, `"waiting"`, 1)
 	hosted := strings.Replace(queuedPayload, `["self-hosted", "mayfly"]`, `["ubuntu-latest"]`, 1)
+	hostedDone := strings.Replace(completed, `["self-hosted","mayfly"]`, `["ubuntu-latest"]`, 1)
 
 	tests := []struct {
-		name       string
-		event      string
-		delivery   string
-		body       string
-		wantStatus int
-		wantJobs   int
+		name        string
+		event       string
+		delivery    string
+		body        string
+		wantStatus  int
+		wantJobs    int
+		wantUpdates int
 	}{
-		{"queued for mayfly", "workflow_job", "d1", queuedPayload, http.StatusAccepted, 1},
-		{"ping", "ping", "d2", `{"zen":"hi"}`, http.StatusOK, 0},
-		{"unknown event", "push", "d3", `{"ref":"main"}`, http.StatusAccepted, 0},
-		{"no event header", "", "d4", `{}`, http.StatusAccepted, 0},
-		{"completed action", "workflow_job", "d5", completed, http.StatusAccepted, 0},
-		{"github-hosted labels", "workflow_job", "d6", hosted, http.StatusAccepted, 0},
-		{"malformed workflow_job", "workflow_job", "d7", `{`, http.StatusBadRequest, 0},
-		{"missing delivery id", "workflow_job", "", queuedPayload, http.StatusBadRequest, 0},
+		{"queued for mayfly", "workflow_job", "d1", queuedPayload, http.StatusAccepted, 1, 0},
+		{"ping", "ping", "d2", `{"zen":"hi"}`, http.StatusOK, 0, 0},
+		{"unknown event", "push", "d3", `{"ref":"main"}`, http.StatusAccepted, 0, 0},
+		{"no event header", "", "d4", `{}`, http.StatusAccepted, 0, 0},
+		{"completed action", "workflow_job", "d5", completed, http.StatusAccepted, 0, 1},
+		{"in_progress action", "workflow_job", "d5b", inProgress, http.StatusAccepted, 0, 1},
+		{"waiting action", "workflow_job", "d5c", waiting, http.StatusAccepted, 0, 0},
+		{"github-hosted labels", "workflow_job", "d6", hosted, http.StatusAccepted, 0, 0},
+		{"github-hosted completed", "workflow_job", "d6b", hostedDone, http.StatusAccepted, 0, 0},
+		{"malformed workflow_job", "workflow_job", "d7", `{`, http.StatusBadRequest, 0, 0},
+		{"missing delivery id", "workflow_job", "", queuedPayload, http.StatusBadRequest, 0, 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var jobs []Job
-			h := NewHandler(discardLogger(), testWebhook(secret, func(j Job) { jobs = append(jobs, j) }))
+			updates := 0
+			wh := testWebhook(secret, func(j Job) { jobs = append(jobs, j) })
+			wh.OnUpdate = func(string, Job) { updates++ }
+			h := NewHandler(discardLogger(), wh)
 			if got := postSigned(h, secret, tt.event, tt.delivery, tt.body); got != tt.wantStatus {
 				t.Errorf("status = %d, want %d", got, tt.wantStatus)
 			}
 			if len(jobs) != tt.wantJobs {
-				t.Errorf("handoffs = %d, want %d", len(jobs), tt.wantJobs)
+				t.Errorf("queued handoffs = %d, want %d", len(jobs), tt.wantJobs)
+			}
+			if updates != tt.wantUpdates {
+				t.Errorf("update handoffs = %d, want %d", updates, tt.wantUpdates)
 			}
 		})
 	}
@@ -202,7 +216,9 @@ func TestServeShutsDownOnCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, ln, cfg, discardLogger(), func(Job) error { return nil }) }()
+	go func() {
+		done <- serve(ctx, ln, cfg, discardLogger(), Handoff{OnQueued: func(Job) error { return nil }, OnUpdate: func(string, Job) {}})
+	}()
 
 	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
 	if err != nil {

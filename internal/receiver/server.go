@@ -18,6 +18,8 @@ type Webhook struct {
 	Dedupe Deduper
 	// OnQueued hands a job off without blocking; an error means it was not accepted.
 	OnQueued func(Job) error
+	// OnUpdate passes an in_progress or completed job on without blocking.
+	OnUpdate func(action string, job Job)
 }
 
 // NewHandler returns the receiver routes: GET /healthz and POST /webhook.
@@ -90,7 +92,9 @@ func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte)
 	}
 	log = log.With("action", action, "job_id", job.ID, "repo", job.Repo)
 
-	if action != "queued" {
+	switch action {
+	case "queued", "in_progress", "completed":
+	default:
 		log.Info("workflow_job action ignored")
 		return http.StatusAccepted
 	}
@@ -103,6 +107,11 @@ func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte)
 		return http.StatusAccepted
 	}
 
+	if action != "queued" {
+		wh.OnUpdate(action, job)
+		log.Info("workflow_job update handed off", "runner_name", job.RunnerName, "conclusion", job.Conclusion)
+		return http.StatusAccepted
+	}
 	if err := wh.OnQueued(job); err != nil {
 		// Un-mark the delivery so GitHub's redelivery is not dropped as a duplicate.
 		wh.Dedupe.Forget(delivery)

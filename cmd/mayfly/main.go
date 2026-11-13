@@ -71,7 +71,7 @@ func run(logger *slog.Logger) error {
 		close(provDone)
 	}()
 
-	err = receiver.Run(ctx, rcfg, logger, prov.Enqueue)
+	err = receiver.Run(ctx, rcfg, logger, receiver.Handoff{OnQueued: prov.Enqueue, OnUpdate: prov.Update})
 	// Stop the provisioner too if the receiver failed on its own, e.g. the port was taken.
 	stop()
 	<-provDone

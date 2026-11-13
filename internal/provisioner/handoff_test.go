@@ -34,6 +34,7 @@ func TestWebhookDoesNotWaitOnProvisioning(t *testing.T) {
 		Labels:   []string{"mayfly"},
 		Dedupe:   receiver.NewMemoryDeduper(time.Hour),
 		OnQueued: p.Enqueue,
+		OnUpdate: p.Update,
 	})
 
 	mac := hmac.New(sha256.New, secret)
