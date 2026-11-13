@@ -93,6 +93,7 @@ Expected output (JSON, one line each): `receiver listening` and `provisioner sta
 | `MAYFLY_WORKERS` | `2` | Jobs provisioned in parallel |
 | `MAYFLY_QUEUE_SIZE` | `100` | Jobs waiting before the receiver answers 503 |
 | `MAYFLY_WORKER_IMAGE` | `ghcr.io/actions/actions-runner:2.338.2` | Worker image |
+| `MAYFLY_WORKER_NETWORK` | Docker default `bridge` | Docker network workers attach to; mayfly creates it (bridge interface of the same name) when missing |
 | `MAYFLY_WORKER_TIMEOUT` | `6h` | Maximum worker lifetime |
 | `MAYFLY_DOCKER_SOCKET` | `/var/run/docker.sock` | Docker daemon socket |
 | `MAYFLY_GITHUB_API_URL` | `https://api.github.com` | GitHub API base URL |
@@ -166,6 +167,28 @@ gh api repos/TeddyBertrand/mayfly-demo/actions/runners --jq .total_count   # 0
 ## 7. Stop
 
 Press Ctrl-C in both terminals. Mayfly cancels running workers (their containers are removed and their jobs fail on GitHub) and drops queued jobs. Until the next run, webhook deliveries to the old tunnel URL fail; this is harmless.
+
+## Run with Docker Compose
+
+The same deploy unit as the cloud host (decisions 014 and 015): mayfly and the reaper run from one image, with the secrets mounted as files. Needs Docker Compose v2 and the one-time setup above; Go and cloudflared are not needed on the host.
+
+1. Copy `.env.example` to `.env` (gitignored) and fill it in. `MAYFLY_UID` must own the secret files (`id -u`), and `DOCKER_GID` comes from `getent group docker | cut -d: -f3`.
+2. Start everything behind a tunnel and point the App webhook at it:
+
+   ```bash
+   make compose-dev
+   ```
+
+   This builds the image, waits for mayfly's healthcheck, reads the tunnel hostname from cloudflared's `/quicktunnel` endpoint, and runs `setwebhook` from the image.
+3. Run `make smoke`, then stop with `make compose-down`. mayfly removes its workers on SIGTERM; Compose waits up to a minute for it.
+
+Without the tunnel, `docker compose up -d` runs mayfly and the reaper only, for example on a host with a public address. Workers attach to the `mayfly-workers` network, which mayfly creates on first use. To run a published release instead of a local build, set `MAYFLY_VERSION` to its version and run `docker compose pull`.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `required variable ... is missing` | `.env` not filled in | Copy `.env.example` and set every value |
+| `permission denied` on `/run/secrets/...` | `MAYFLY_UID` does not own the secret files | Set it to the owner's UID (`stat -c %u <file>`) |
+| `permission denied` on `docker.sock` | Wrong `DOCKER_GID` | Use the GID from `getent group docker` |
 
 ## Troubleshooting
 

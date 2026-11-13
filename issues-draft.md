@@ -111,13 +111,22 @@ Handle `in_progress`, `completed` and cancelled: mark worker state, clean up on 
 Max concurrent workers from config. Excess jobs wait in a queue with a bounded size.
 - [x] Cap enforced under a burst of 20 jobs
 
+### **done** [infra] Docker Compose deploy (#80)
+Package mayfly and the reaper as container images and run them with one `compose.yaml`, the single deploy unit used both locally and on the cloud host (decision 014). Secrets are Compose secrets mounted as files, matching the `*_FILE` settings. Both services reach the host Docker daemon through the socket, and workers attach to a dedicated `mayfly-workers` network. A `tunnel` profile adds cloudflared for local use. Images are published to GHCR by the release workflow.
+- [x] `docker compose up` runs mayfly and the reaper, and a demo job runs on a worker
+- [x] `docker compose down` leaves no worker containers or runner registrations behind
+- [x] Secrets never appear in the image, the Compose file or `docker inspect` environment
+- [x] Images are multi-stage, run as a non-root user, and have a `/healthz` healthcheck
+- [ ] A release pushes `ghcr.io/teddybertrand/mayfly:<version>` for amd64 and arm64
+- [x] Local dev guide covers the Compose path next to `make dev`
+
 ### [infra] Terraform: host, network and firewall
 Provision the server, a firewall allowing only the webhook port and SSH from the user's IP, and a Docker network for workers with no route to internal resources.
 - [ ] `terraform apply` creates the host
 - [ ] Worker egress limited as documented
 
 ### [infra] Terraform: bootstrap and secrets
-Cloud-init installs Docker and the Mayfly binary as a systemd service. Secrets (webhook secret, App key) are injected without being committed.
+Cloud-init installs Docker, applies the worker egress rules, and starts the Compose deploy with a pinned image version. Secrets (webhook secret, App key) are injected without being committed.
 - [ ] From a clean account, `terraform apply` yields a working system
 - [ ] `terraform destroy` removes everything
 
