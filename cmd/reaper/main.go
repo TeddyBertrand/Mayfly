@@ -43,7 +43,10 @@ func run(logger *slog.Logger) error {
 		docker.NewInventory(cfg.DockerSocket),
 		github.NewClient(cfg.GitHubAPIURL, cfg.AppID, key),
 		reaper.HealthOwner(&http.Client{Timeout: healthTimeout}, cfg.HealthURL),
-		reaper.Options{MaxAge: cfg.MaxAge, Grace: cfg.Grace, MissedProbes: cfg.MissedProbes},
+		reaper.Options{
+			MaxAge: cfg.MaxAge, Grace: cfg.Grace, MissedProbes: cfg.MissedProbes,
+			StaleAfter: cfg.StaleAfter, StuckAfter: cfg.StuckAfter, Labels: cfg.RunnerLabels,
+		},
 		logger,
 	)
 

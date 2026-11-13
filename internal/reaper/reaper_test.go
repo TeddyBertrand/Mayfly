@@ -50,20 +50,53 @@ func (f *fakeWorkers) Remove(_ context.Context, id string) error {
 	return nil
 }
 
-// fakeRunners answers runner lookups from a map keyed by runner ID; missing IDs return err.
+// fakeRunners is a fake GitHub with one repo, octo/demo. Runner lookups come from runners (missing IDs
+// return err); registrations and queued jobs come from regs and jobs, and deletes are recorded.
 type fakeRunners struct {
-	runners map[int64]github.Runner
-	err     error
-	calls   int
+	runners  map[int64]github.Runner
+	err      error
+	calls    int
+	regs     []github.RunnerRegistration
+	jobs     []github.QueuedJob
+	reposErr error
+	listErr  error
+	deleted  []int64
 }
 
-// Runner implements Runners.
+// Runner implements GitHub.
 func (f *fakeRunners) Runner(_ context.Context, _ int64, _ string, id int64) (github.Runner, error) {
 	f.calls++
 	if r, ok := f.runners[id]; ok {
 		return r, nil
 	}
 	return github.Runner{}, f.err
+}
+
+// Repos implements GitHub.
+func (f *fakeRunners) Repos(context.Context) ([]github.Repo, error) {
+	return []github.Repo{{FullName: "octo/demo", InstallationID: 9}}, f.reposErr
+}
+
+// Runners implements GitHub.
+func (f *fakeRunners) Runners(context.Context, int64, string) ([]github.RunnerRegistration, error) {
+	return f.regs, f.listErr
+}
+
+// DeleteRunner implements GitHub and removes the registration from regs.
+func (f *fakeRunners) DeleteRunner(_ context.Context, _ int64, _ string, id int64) error {
+	f.deleted = append(f.deleted, id)
+	for i, r := range f.regs {
+		if r.ID == id {
+			f.regs = append(f.regs[:i], f.regs[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+// QueuedJobs implements GitHub.
+func (f *fakeRunners) QueuedJobs(context.Context, int64, string) ([]github.QueuedJob, error) {
+	return f.jobs, f.listErr
 }
 
 var online = github.Runner{Found: true, Status: "online", Busy: true}
@@ -81,19 +114,22 @@ func liveOwner(id string) Owner {
 // deadOwner is an Owner that never answers.
 func deadOwner(context.Context) (string, error) { return "", errors.New("connection refused") }
 
-var opts = Options{MaxAge: 6 * time.Hour, Grace: 2 * time.Minute, MissedProbes: 2}
+var opts = Options{
+	MaxAge: 6 * time.Hour, Grace: 2 * time.Minute, MissedProbes: 2,
+	StaleAfter: 10 * time.Minute, StuckAfter: 10 * time.Minute, Labels: []string{"mayfly"},
+}
 
 // newTestReaper returns a Reaper over the fakes with a fixed clock and discarded logs.
-func newTestReaper(w Workers, r Runners, o Owner) *Reaper {
+func newTestReaper(w Workers, r GitHub, o Owner) *Reaper {
 	rp := New(w, r, o, opts, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	rp.now = func() time.Time { return now }
 	return rp
 }
 
-// reasons returns "id=reason" for each removal, sorted, for easy comparison.
-func reasons(rs []Removal) []string {
+// reasons returns "id=reason" for each container removed in rep, sorted, for easy comparison.
+func reasons(rep Report) []string {
 	out := []string{}
-	for _, r := range rs {
+	for _, r := range rep.Removed {
 		out = append(out, r.Worker.ID+"="+r.Reason)
 	}
 	sort.Strings(out)
@@ -175,15 +211,15 @@ func TestOwnerUnreachable(t *testing.T) {
 	rp := newTestReaper(fw, fr, owner)
 	ctx := context.Background()
 
-	if got, _ := rp.Sweep(ctx); len(got) != 0 {
+	if got, _ := rp.Sweep(ctx); len(got.Removed) != 0 {
 		t.Fatalf("first miss removed %v", reasons(got))
 	}
 	answer = true
-	if got, _ := rp.Sweep(ctx); len(got) != 0 {
+	if got, _ := rp.Sweep(ctx); len(got.Removed) != 0 {
 		t.Fatalf("answering owner removed %v", reasons(got))
 	}
 	answer = false
-	if got, _ := rp.Sweep(ctx); len(got) != 0 {
+	if got, _ := rp.Sweep(ctx); len(got.Removed) != 0 {
 		t.Fatalf("miss after reset removed %v", reasons(got))
 	}
 	if got, _ := rp.Sweep(ctx); !reflect.DeepEqual(reasons(got), []string{"a=" + ReasonOwnerUnreachable}) {
@@ -200,7 +236,7 @@ func TestSweepErrors(t *testing.T) {
 
 	fw := &fakeWorkers{workers: []docker.Worker{worker("a", 7*time.Hour, "x", 0), worker("b", 7*time.Hour, "x", 0)}, removeErr: errors.New("busy")}
 	got, err := newTestReaper(fw, fr, liveOwner("x")).Sweep(context.Background())
-	if err != nil || len(got) != 0 {
+	if err != nil || len(got.Removed) != 0 {
 		t.Errorf("got %v, %v; want no removals and no error", reasons(got), err)
 	}
 }
