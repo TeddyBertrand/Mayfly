@@ -120,10 +120,10 @@ Package mayfly and the reaper as container images and run them with one `compose
 - [ ] A release pushes `ghcr.io/teddybertrand/mayfly:<version>` for amd64 and arm64
 - [x] Local dev guide covers the Compose path next to `make dev`
 
-### [infra] Terraform: host, network and firewall
+### **done** [infra] Terraform: host, network and firewall (#19)
 Provision the server, a firewall allowing only the webhook port and SSH from the user's IP, and a Docker network for workers with no route to internal resources.
-- [ ] `terraform apply` creates the host
-- [ ] Worker egress limited as documented
+- [x] `terraform apply` creates the host
+- [x] Worker egress limited as documented
 
 ### [infra] Terraform: bootstrap and secrets
 Cloud-init installs Docker, applies the worker egress rules, and starts the Compose deploy with a pinned image version. Secrets (webhook secret, App key) are injected without being committed.
