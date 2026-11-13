@@ -98,7 +98,9 @@ Expected output (JSON, one line each): `receiver listening` and `provisioner sta
 | `MAYFLY_GITHUB_API_URL` | `https://api.github.com` | GitHub API base URL |
 | `MAYFLY_SHUTDOWN_TIMEOUT` | `10s` | Time to drain HTTP requests on SIGTERM |
 
-The reaper (`go run ./cmd/reaper`) reads the App, Docker and worker timeout variables above, plus:
+Make targets for running jobs, crashing mayfly and checking cleanup are described in [makefile.md](makefile.md), with step-by-step recipes for the smoke and orphan tests.
+
+The reaper (`make reaper`, with the same App defaults as `make dev`) reads the App, Docker and worker timeout variables above, plus:
 
 | Variable | Default | Meaning |
 |---|---|---|
