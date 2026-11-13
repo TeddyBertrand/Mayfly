@@ -94,10 +94,10 @@ Periodic loop that lists workers (by label) and removes any that exceed a max ag
 - [x] Killing the provisioner mid-job leaves no worker after one reaper cycle
 - [x] Max age configurable
 
-### [reaper] Reaper for stuck jobs and stale runner registrations
+### **done** [reaper] Reaper for stuck jobs and stale runner registrations (#15)
 Detect jobs stuck in `queued` with no worker, and delete stale runner registrations through the API.
-- [ ] Stale registrations are removed
-- [ ] Stuck job triggers a retry or is logged with a reason
+- [x] Stale registrations are removed
+- [x] Stuck job triggers a retry or is logged with a reason
 
 ### **done** [provisioner] Retries and backoff (#16)
 Retry JIT config and container start with exponential backoff and jitter. Respect GitHub rate limits (`Retry-After`).
