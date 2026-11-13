@@ -1,4 +1,4 @@
-.PHONY: build test fmt-check lint dev reaper smoke long workers runners check-clean crash
+.PHONY: build test fmt-check lint dev compose-dev compose-down reaper smoke long workers runners check-clean crash
 
 # Same defaults as scripts/dev.sh; set the variables in the environment to override them.
 MAYFLY_APP_ID ?= 5714458
@@ -20,6 +20,13 @@ lint: fmt-check
 
 dev:
 	./scripts/dev.sh
+
+# compose-dev runs mayfly and the reaper in Compose behind the tunnel; compose-down stops them.
+compose-dev:
+	./scripts/compose-dev.sh
+
+compose-down:
+	docker compose --profile tunnel down
 
 reaper:
 	MAYFLY_APP_ID=$(MAYFLY_APP_ID) MAYFLY_APP_KEY_FILE=$(MAYFLY_APP_KEY_FILE) go run ./cmd/reaper
