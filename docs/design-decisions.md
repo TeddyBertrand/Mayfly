@@ -145,7 +145,7 @@ Each entry records one decision, the options considered and the consequences. En
   - **A. Hetzner, local state:** simplest resource model (server, firewall, SSH key), but paid and state lives on one laptop.
   - **B. Azure, always on:** free to the owner, but a 4 GB VM (about $30 per month) uses up the yearly credit in about three months.
   - **C. Azure, on demand:** the host exists only while in use. `terraform destroy` after each session, and `apply` rebuilds it in minutes. Default size is the free-tier `Standard_B2ats_v2`, with a bigger size passed as a variable on benchmark days.
-- **Decision:** C. Terraform state lives in Azure Blob Storage (`azurerm` backend, with locking) in a storage account created once by a small separate bootstrap config. Locally, Terraform authenticates through the Azure CLI login; no service principal until CI runs Terraform.
+- **Decision:** C. Terraform state lives in Azure Blob Storage (`azurerm` backend, with locking) in a storage account created once by an idempotent `az` script (`infra/bootstrap/bootstrap.sh`), so the state has no state of its own to lose. Locally, Terraform authenticates through the Azure CLI login; no service principal until CI runs Terraform.
 - **Consequences:** More resources to manage than Hetzner (resource group, VNet, subnet, NSG, public IP, NIC, VM). The deploy must be fully reproducible, because the host is rebuilt often. Docker Compose is the deploy unit used locally day to day; Terraform only builds the host, and cloud-init runs the same Compose file there. The webhook URL changes with each new public IP unless it gets a DNS name. The Azure metadata service at 169.254.169.254 must be blocked for workers, like every internal range. Firecracker (stretch goal) needs nested virtualization, which B-series sizes lack. Revisit if the credit runs out or the subscription type changes.
 
 ## 015. Container packaging for the Compose deploy
@@ -159,3 +159,15 @@ Each entry records one decision, the options considered and the consequences. En
   - **Publishing:** Docker's official GitHub Actions, or plain `docker buildx` commands in `run:` steps.
 - **Decision:** `distroless/static`, one image with both binaries (Compose picks the command), `group_add` with the host docker GID from a `DOCKER_GID` variable, and Docker's official actions to push multi-arch images to GHCR.
 - **Consequences:** No shell in the image, so debugging uses `docker debug` or the logs. mayfly and the reaper always ship at the same version. `DOCKER_GID` must be set per host (`getent group docker`), and cloud-init computes it. Socket access is still root-equivalent on the host: non-root limits what a bug in mayfly can do outside the API, not through it. Revisit with a socket proxy if mayfly ever runs untrusted input closer to the daemon.
+
+## 016. Cloud host region, webhook TLS and worker egress
+- **Date:** 2026-11-13
+- **Status:** accepted
+- **Context:** #19 builds the Azure host. The subscription policy allows five regions, but only `denmarkeast` offers B-series sizes to this subscription, with quota for `Basv2` (10 vCPU) and `BS` (4 vCPU) under a 6 vCPU regional cap; D v5 sizes have 0 quota. GitHub must reach the webhook from the internet, and workers run untrusted job code next to the host and Azure's internal endpoints.
+- **Options considered:**
+  - **Region:** `denmarkeast`, or `belgiumcentral` (only D v4, no free tier).
+  - **Webhook transport:** HTTPS through Caddy with an automatic Let's Encrypt certificate for the public IP's Azure DNS name (ports 80 and 443), plain HTTP on 8080, or a cloudflared tunnel with no inbound port.
+  - **Egress enforcement:** host `iptables` rules on the worker bridge, installed by a minimal cloud-init in #19, or deferred to #20. An NSG cannot tell container traffic from host traffic and never sees traffic to 169.254.169.254 or 168.63.129.16.
+  - **SSH source address:** a `ssh_allowed_cidr` variable, or auto-detection through an external "what is my IP" service.
+- **Decision:** `denmarkeast`; HTTPS through Caddy (added to the Compose deploy in #20); `iptables` rules in the `DOCKER-USER` and `INPUT` chains for the `mayfly-workers` bridge, applied by a systemd unit from cloud-init in #19; SSH allowed only from `ssh_allowed_cidr`.
+- **Consequences:** The NSG opens 22 (one address), 80 and 443. The HMAC signature still authenticates deliveries; TLS adds confidentiality. Workers can reach the internet but not the host, the VNet, private ranges, link-local addresses (instance metadata) or the Azure wire server (168.63.129.16); DNS keeps working because Docker's embedded resolver forwards from the host namespace. The DNS name stays the same across rebuilds, so the App webhook URL is set once. Firecracker needs a D v5 quota request first. The SSH rule must be updated when the owner's IP changes.

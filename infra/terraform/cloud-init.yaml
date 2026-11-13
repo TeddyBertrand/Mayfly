@@ -1,0 +1,46 @@
+#cloud-config
+# Host bootstrap for #19: Docker plus the worker egress rules (decision 016). #20 adds the Compose deploy.
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+
+write_files:
+  - path: /usr/local/sbin/mayfly-egress
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # Blocks workers on the mayfly-workers bridge from the host, the VNet and internal ranges.
+      set -eu
+      IF=mayfly-workers
+      CHAIN=MAYFLY-EGRESS
+      iptables -N "$CHAIN" 2>/dev/null || iptables -F "$CHAIN"
+      iptables -A "$CHAIN" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+      # 168.63.129.16 is the Azure wire server; 169.254.0.0/16 holds the instance metadata service.
+      for net in ${vnet_cidr} 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 168.63.129.16/32; do
+        iptables -A "$CHAIN" -d "$net" -j DROP
+      done
+      iptables -A "$CHAIN" -j RETURN
+      iptables -C DOCKER-USER -i "$IF" -j "$CHAIN" 2>/dev/null || iptables -I DOCKER-USER -i "$IF" -j "$CHAIN"
+      iptables -C INPUT -i "$IF" -m conntrack --ctstate NEW -j DROP 2>/dev/null ||
+        iptables -I INPUT -i "$IF" -m conntrack --ctstate NEW -j DROP
+  - path: /etc/systemd/system/mayfly-egress.service
+    content: |
+      [Unit]
+      Description=Mayfly worker egress rules
+      After=docker.service
+      PartOf=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/sbin/mayfly-egress
+
+      [Install]
+      WantedBy=docker.service
+
+runcmd:
+  - usermod -aG docker ${admin_username}
+  - systemctl daemon-reload
+  - systemctl enable --now docker.service mayfly-egress.service
