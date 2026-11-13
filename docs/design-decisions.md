@@ -112,4 +112,16 @@ Each entry records one decision, the options considered and the consequences. En
   - **A. In memory:** a map from job ID to state, guarded by a mutex, inside the provisioner. No dependency, simple and fast. Lost on restart.
   - **B. SQLite or a state file:** survives a restart. Adds a dependency and on-disk state to manage, and does not help much, since a restarted process cannot reattach to running containers anyway.
 - **Decision:** A. In-memory state, matching the in-memory deduper.
-- **Consequences:** A restart forgets every job. Containers left behind are found by their `mayfly.job_id` label and removed by the reaper (#13), and stale runner registrations are deleted by #14. Revisit if Mayfly runs as several replicas, which would need shared state.
+- **Consequences:** A restart forgets every job. Containers left behind are found by their `mayfly.job_id` label and removed by the reaper (#14), and stale runner registrations are deleted by #15. Revisit if Mayfly runs as several replicas, which would need shared state.
+
+## 012. Orphaned workers detected by owner instance ID
+- **Date:** 2026-11-13
+- **Status:** accepted
+- **Context:** #14 must remove workers nobody manages any more, including after the provisioner is killed mid-job. In that case the container keeps running and its runner stays online and busy on GitHub, so neither a max age nor a GitHub status check notices it. The reaper is a separate binary and needs a way to tell whether the process that started a worker is still alive.
+- **Options considered:**
+  - **A. Owner instance ID:** mayfly picks a random ID at boot, labels each container with it (`mayfly.owner`) and reports it on `/healthz`. The reaper removes containers whose owner is not the live instance. A restart is caught in one cycle; an unreachable owner only counts after several missed probes in a row. No dependency.
+  - **B. Let it finish:** treat a crash as harmless, since the container ends with its job and `AutoRemove` cleans it up. Kind to the job, but leaves unmanaged workers and fails the acceptance criterion.
+  - **C. Startup sweep:** mayfly removes every labelled container when it starts. Simple, but does nothing if mayfly never comes back.
+  - **D. Lease file:** mayfly touches a file every few seconds. Ties both processes to a shared path and cannot tell a restarted process from the old one.
+- **Decision:** A, combined with a max age (`MAYFLY_WORKER_MAX_AGE`, must exceed the worker timeout) and a GitHub check (registration gone, or runner offline after a grace period).
+- **Consequences:** A job running when mayfly restarts is killed and fails on GitHub, so it must be rerun; that is the price of never leaving unmanaged workers. The reaper only removes on positive evidence: a GitHub error or a single missed probe keeps the worker for the next cycle. The reaper needs the GitHub App key, with the same permissions as the provisioner. Containers from versions before this decision have no owner label and are removed as orphans.

@@ -23,6 +23,12 @@ const (
 	// LabelJobID and LabelRunnerName tag every worker container so the reaper can find them.
 	LabelJobID      = "mayfly.job_id"
 	LabelRunnerName = "mayfly.runner_name"
+	// LabelOwner is the instance ID of the mayfly process that started the worker.
+	LabelOwner = "mayfly.owner"
+	// LabelRepo, LabelInstallationID and LabelRunnerID identify the runner registration on GitHub.
+	LabelRepo           = "mayfly.repo"
+	LabelInstallationID = "mayfly.installation_id"
+	LabelRunnerID       = "mayfly.runner_id"
 
 	removeTimeout = 30 * time.Second
 )
@@ -35,13 +41,15 @@ type Backend struct {
 	timeout time.Duration
 	logger  *slog.Logger
 	retry   retry.Policy
+	owner   string
 }
 
 var _ worker.Backend = (*Backend)(nil)
 
 // New returns a Backend using the daemon on socket, running image, and killing workers after timeout.
-func New(socket, image string, timeout time.Duration, logger *slog.Logger) *Backend {
-	return &Backend{eng: newSocketEngine(socket), image: image, cmd: []string{"./run.sh"}, timeout: timeout, logger: logger, retry: retry.Default}
+// Every container is labelled with owner, the instance ID of this process, so the reaper can spot orphans.
+func New(socket, image string, timeout time.Duration, owner string, logger *slog.Logger) *Backend {
+	return &Backend{eng: newSocketEngine(socket), image: image, cmd: []string{"./run.sh"}, timeout: timeout, logger: logger, retry: retry.Default, owner: owner}
 }
 
 // Run starts a runner container for spec, waits for it to finish, and always removes it.
@@ -90,8 +98,12 @@ func (b *Backend) containerSpec(spec worker.Spec) containerSpec {
 		Cmd:   b.cmd,
 		Env:   []string{"ACTIONS_RUNNER_INPUT_JITCONFIG=" + spec.JITConfig},
 		Labels: map[string]string{
-			LabelJobID:      strconv.FormatInt(spec.JobID, 10),
-			LabelRunnerName: spec.RunnerName,
+			LabelJobID:          strconv.FormatInt(spec.JobID, 10),
+			LabelRunnerName:     spec.RunnerName,
+			LabelOwner:          b.owner,
+			LabelRepo:           spec.Repo,
+			LabelInstallationID: strconv.FormatInt(spec.InstallationID, 10),
+			LabelRunnerID:       strconv.FormatInt(spec.RunnerID, 10),
 		},
 	}
 	cs.HostConfig.AutoRemove = true

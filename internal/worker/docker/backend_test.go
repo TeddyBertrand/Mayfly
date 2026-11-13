@@ -140,12 +140,16 @@ func newFakeBackend(t *testing.T, f *fakeEngine, timeout time.Duration) (*Backen
 		cmd:     []string{"./run.sh"},
 		timeout: timeout,
 		logger:  slog.New(slog.NewJSONHandler(&logs, nil)),
+		owner:   "instance-a",
 	}
 	return b, &logs
 }
 
 // testSpec is the worker spec used across these tests.
-var testSpec = worker.Spec{JobID: 4242, RunnerName: "mayfly-4242-abcdef", JITConfig: fakeJIT}
+var testSpec = worker.Spec{
+	JobID: 4242, RunnerName: "mayfly-4242-abcdef", JITConfig: fakeJIT,
+	Repo: "octo/demo", InstallationID: 9, RunnerID: 77,
+}
 
 // TestRunSequences checks the call order and that every path after create removes the container.
 func TestRunSequences(t *testing.T) {
@@ -236,7 +240,10 @@ func TestContainerSpec(t *testing.T) {
 	if !reflect.DeepEqual(got.Env, []string{"ACTIONS_RUNNER_INPUT_JITCONFIG=" + fakeJIT}) {
 		t.Errorf("env = %v", got.Env)
 	}
-	wantLabels := map[string]string{LabelJobID: "4242", LabelRunnerName: "mayfly-4242-abcdef"}
+	wantLabels := map[string]string{
+		LabelJobID: "4242", LabelRunnerName: "mayfly-4242-abcdef", LabelOwner: "instance-a",
+		LabelRepo: "octo/demo", LabelInstallationID: "9", LabelRunnerID: "77",
+	}
 	if !reflect.DeepEqual(got.Labels, wantLabels) {
 		t.Errorf("labels = %v, want %v", got.Labels, wantLabels)
 	}
