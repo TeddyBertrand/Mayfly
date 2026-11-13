@@ -107,9 +107,9 @@ Retry JIT config and container start with exponential backoff and jitter. Respec
 Handle `in_progress`, `completed` and cancelled: mark worker state, clean up on `completed`, and drop the pending worker if the job is cancelled before it starts.
 - [ ] A worker state machine is documented and tested
 
-### [provisioner] Concurrency cap and queueing
+### **done** [provisioner] Concurrency cap and queueing (#18)
 Max concurrent workers from config. Excess jobs wait in a queue with a bounded size.
-- [ ] Cap enforced under a burst of 20 jobs
+- [x] Cap enforced under a burst of 20 jobs
 
 ### [infra] Terraform: host, network and firewall
 Provision the server, a firewall allowing only the webhook port and SSH from the user's IP, and a Docker network for workers with no route to internal resources.
