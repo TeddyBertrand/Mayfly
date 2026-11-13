@@ -1,0 +1,76 @@
+# Mayfly deploy unit (issue #80, decisions 014 and 015). Settings come from .env, see .env.example.
+name: mayfly
+
+x-common: &common
+  image: ghcr.io/teddybertrand/mayfly:${MAYFLY_VERSION:-dev}
+  restart: unless-stopped
+  # Host UID so the 600 secret files stay readable; the docker GID grants socket access.
+  user: "${MAYFLY_UID:?set MAYFLY_UID in .env}:${MAYFLY_UID}"
+  group_add:
+    - "${DOCKER_GID:?set DOCKER_GID in .env}"
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+  secrets: [app_key]
+  environment: &env
+    MAYFLY_APP_ID: ${MAYFLY_APP_ID:?set MAYFLY_APP_ID in .env}
+    MAYFLY_APP_KEY_FILE: /run/secrets/app_key
+    MAYFLY_RUNNER_LABELS: ${MAYFLY_RUNNER_LABELS:-mayfly}
+    MAYFLY_WORKER_NETWORK: mayfly-workers
+    MAYFLY_WORKER_TIMEOUT: ${MAYFLY_WORKER_TIMEOUT:-6h}
+
+services:
+  mayfly:
+    <<: *common
+    build:
+      context: .
+      args:
+        VERSION: ${MAYFLY_VERSION:-dev}
+    secrets: [app_key, webhook_secret]
+    environment:
+      <<: *env
+      MAYFLY_LISTEN_ADDR: ":8080"
+      MAYFLY_WEBHOOK_SECRET_FILE: /run/secrets/webhook_secret
+      MAYFLY_WORKERS: ${MAYFLY_WORKERS:-2}
+      MAYFLY_QUEUE_SIZE: ${MAYFLY_QUEUE_SIZE:-100}
+    ports:
+      - "${MAYFLY_PUBLISH:-127.0.0.1:8080}:8080"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mayfly", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    # Long enough for mayfly to remove its running workers on SIGTERM.
+    stop_grace_period: 1m
+
+  reaper:
+    <<: *common
+    entrypoint: ["/usr/local/bin/reaper"]
+    environment:
+      <<: *env
+      MAYFLY_HEALTH_URL: http://mayfly:8080/healthz
+      MAYFLY_REAPER_INTERVAL: ${MAYFLY_REAPER_INTERVAL:-1m}
+    depends_on:
+      mayfly:
+        condition: service_healthy
+
+  tunnel:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:2025.11.1
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--metrics", "0.0.0.0:20241", "--url", "http://mayfly:8080"]
+    ports:
+      - "127.0.0.1:20241:20241"
+    depends_on:
+      mayfly:
+        condition: service_healthy
+
+secrets:
+  app_key:
+    file: ${MAYFLY_APP_KEY_PATH:?set MAYFLY_APP_KEY_PATH in .env}
+  webhook_secret:
+    file: ${MAYFLY_WEBHOOK_SECRET_PATH:?set MAYFLY_WEBHOOK_SECRET_PATH in .env}

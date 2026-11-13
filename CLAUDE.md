@@ -19,7 +19,7 @@ This is a DevOps portfolio project. The owner must be able to understand and exp
 Ask first, and wait for an answer, before:
 
 - Adding a dependency or choosing a library (e.g. `go-github` vs raw REST).
-- Creating or changing real cloud resources, or anything that costs money (Hetzner, Terraform apply/destroy).
+- Creating or changing real cloud resources, or anything that costs money (Azure, Terraform apply/destroy).
 - Making a design decision that belongs in `docs/design-decisions.md`. Propose options with trade-offs and let the owner pick.
 - Deleting or overwriting files, force-pushing, or anything hard to reverse.
 - Handling secrets (GitHub App private key, webhook secret). Never commit them, and never print them.
