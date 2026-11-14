@@ -153,9 +153,9 @@ Clean up package boundaries before M3 instruments them, so metrics code is writt
 - [x] No package imports `receiver` except `cmd/mayfly`
 - [x] No raw action strings outside `internal/workflow`
 
-### [refacto] Decouple the reaper from the Docker backend
-`reaper.Workers` returns `docker.Worker`, so the reaper depends on one concrete backend. Move the worker inventory type and its list/remove interface into `internal/worker`, implemented by `worker/docker`, so a Firecracker backend (M7) plugs in without touching the reaper.
-- [ ] `internal/reaper` does not import `internal/worker/docker`
+### **done** [refacto] Decouple the reaper from the Docker backend (#91)
+`reaper.Workers` returns `docker.Worker`, so the reaper depends on one concrete backend. Move the worker inventory type and its list/remove interface into `internal/worker`, implemented by `worker/docker`, so a Firecracker backend (M7) plugs in without touching the reaper. The type is `worker.Info` and the interface `worker.Inventory`, next to `worker.Backend`.
+- [x] `internal/reaper` does not import `internal/worker/docker`
 
 ### [refacto] Split config into shared GitHub App and Docker settings
 `ReaperConfig` embeds the whole `ProvisionerConfig`, so the reaper loads settings it never uses, and `config` imports `github` and `worker/docker` for defaults. Introduce shared `GitHubApp` and `Docker` sub-structs that each process composes, and give `provisioner.New` and `docker.New` option structs instead of long positional arguments.

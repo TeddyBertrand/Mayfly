@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
-	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
+	"github.com/TeddyBertrand/Mayfly/internal/worker"
 )
 
 var now = time.Unix(1_700_000_000, 0)
@@ -23,19 +23,19 @@ var now = time.Unix(1_700_000_000, 0)
 // fakeWorkers is an in-memory Docker inventory; Remove deletes from it.
 type fakeWorkers struct {
 	mu        sync.Mutex
-	workers   []docker.Worker
+	workers   []worker.Info
 	listErr   error
 	removeErr error
 }
 
-// List implements Workers.
-func (f *fakeWorkers) List(context.Context) ([]docker.Worker, error) {
+// List implements worker.Inventory.
+func (f *fakeWorkers) List(context.Context) ([]worker.Info, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]docker.Worker(nil), f.workers...), f.listErr
+	return append([]worker.Info(nil), f.workers...), f.listErr
 }
 
-// Remove implements Workers.
+// Remove implements worker.Inventory.
 func (f *fakeWorkers) Remove(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -101,9 +101,9 @@ func (f *fakeRunners) QueuedJobs(context.Context, int64, string) ([]github.Queue
 
 var online = github.Runner{Found: true, Status: "online", Busy: true}
 
-// worker returns a labelled worker created age ago, owned by owner, with runner ID id.
-func worker(id string, age time.Duration, owner string, runnerID int64) docker.Worker {
-	return docker.Worker{ID: id, Created: now.Add(-age), JobID: 1, RunnerName: "mayfly-1-" + id, Owner: owner, Repo: "octo/demo", InstallationID: 9, RunnerID: runnerID}
+// workerInfo returns a labelled worker created age ago, owned by owner, with runner ID runnerID.
+func workerInfo(id string, age time.Duration, owner string, runnerID int64) worker.Info {
+	return worker.Info{ID: id, Created: now.Add(-age), JobID: 1, RunnerName: "mayfly-1-" + id, Owner: owner, Repo: "octo/demo", InstallationID: 9, RunnerID: runnerID}
 }
 
 // liveOwner returns an Owner that always answers id.
@@ -120,7 +120,7 @@ var opts = Options{
 }
 
 // newTestReaper returns a Reaper over the fakes with a fixed clock and discarded logs.
-func newTestReaper(w Workers, r GitHub, o Owner) *Reaper {
+func newTestReaper(w worker.Inventory, r GitHub, o Owner) *Reaper {
 	rp := New(w, r, o, opts, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	rp.now = func() time.Time { return now }
 	return rp
@@ -140,27 +140,27 @@ func reasons(rep Report) []string {
 func TestSweepRules(t *testing.T) {
 	tests := []struct {
 		name    string
-		worker  docker.Worker
+		worker  worker.Info
 		runner  *github.Runner
 		runErr  error
 		owner   Owner
 		want    []string
 		wantGit bool
 	}{
-		{"healthy worker kept", worker("a", 10*time.Minute, "live", 1), &online, nil, liveOwner("live"), []string{}, true},
-		{"too old", worker("a", 7*time.Hour, "live", 1), &online, nil, liveOwner("live"), []string{"a=" + ReasonMaxAge}, false},
-		{"owner restarted", worker("a", time.Minute, "old", 1), &online, nil, liveOwner("live"), []string{"a=" + ReasonOwnerGone}, false},
-		{"no owner label", worker("a", time.Minute, "", 1), &online, nil, liveOwner("live"), []string{"a=" + ReasonOwnerGone}, false},
-		{"registration gone", worker("a", 10*time.Minute, "live", 1), &github.Runner{Found: false}, nil, liveOwner("live"), []string{"a=" + ReasonRunnerGone}, true},
-		{"runner offline", worker("a", 10*time.Minute, "live", 1), &github.Runner{Found: true, Status: "offline"}, nil, liveOwner("live"), []string{"a=" + ReasonRunnerOffline}, true},
-		{"offline but still booting", worker("a", 30*time.Second, "live", 1), &github.Runner{Found: true, Status: "offline"}, nil, liveOwner("live"), []string{}, false},
-		{"github error keeps worker", worker("a", 10*time.Minute, "live", 1), nil, errors.New("502"), liveOwner("live"), []string{}, true},
-		{"no runner id skips github", worker("a", 10*time.Minute, "live", 0), nil, errors.New("unused"), liveOwner("live"), []string{}, false},
-		{"owner blip keeps worker", worker("a", 10*time.Minute, "live", 1), &online, nil, deadOwner, []string{}, true},
+		{"healthy worker kept", workerInfo("a", 10*time.Minute, "live", 1), &online, nil, liveOwner("live"), []string{}, true},
+		{"too old", workerInfo("a", 7*time.Hour, "live", 1), &online, nil, liveOwner("live"), []string{"a=" + ReasonMaxAge}, false},
+		{"owner restarted", workerInfo("a", time.Minute, "old", 1), &online, nil, liveOwner("live"), []string{"a=" + ReasonOwnerGone}, false},
+		{"no owner label", workerInfo("a", time.Minute, "", 1), &online, nil, liveOwner("live"), []string{"a=" + ReasonOwnerGone}, false},
+		{"registration gone", workerInfo("a", 10*time.Minute, "live", 1), &github.Runner{Found: false}, nil, liveOwner("live"), []string{"a=" + ReasonRunnerGone}, true},
+		{"runner offline", workerInfo("a", 10*time.Minute, "live", 1), &github.Runner{Found: true, Status: "offline"}, nil, liveOwner("live"), []string{"a=" + ReasonRunnerOffline}, true},
+		{"offline but still booting", workerInfo("a", 30*time.Second, "live", 1), &github.Runner{Found: true, Status: "offline"}, nil, liveOwner("live"), []string{}, false},
+		{"github error keeps worker", workerInfo("a", 10*time.Minute, "live", 1), nil, errors.New("502"), liveOwner("live"), []string{}, true},
+		{"no runner id skips github", workerInfo("a", 10*time.Minute, "live", 0), nil, errors.New("unused"), liveOwner("live"), []string{}, false},
+		{"owner blip keeps worker", workerInfo("a", 10*time.Minute, "live", 1), &online, nil, deadOwner, []string{}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fw := &fakeWorkers{workers: []docker.Worker{tt.worker}}
+			fw := &fakeWorkers{workers: []worker.Info{tt.worker}}
 			fr := &fakeRunners{runners: map[int64]github.Runner{}, err: tt.runErr}
 			if tt.runner != nil {
 				fr.runners[tt.worker.RunnerID] = *tt.runner
@@ -182,7 +182,7 @@ func TestSweepRules(t *testing.T) {
 // TestProvisionerKilledMidJob is the acceptance case: mayfly is killed mid-job and restarted with a new
 // instance ID. Its running worker is busy and online on GitHub, yet one sweep leaves no worker behind.
 func TestProvisionerKilledMidJob(t *testing.T) {
-	fw := &fakeWorkers{workers: []docker.Worker{worker("a", 3*time.Minute, "before-crash", 1)}}
+	fw := &fakeWorkers{workers: []worker.Info{workerInfo("a", 3*time.Minute, "before-crash", 1)}}
 	fr := &fakeRunners{runners: map[int64]github.Runner{1: online}}
 
 	got, err := newTestReaper(fw, fr, liveOwner("after-restart")).Sweep(context.Background())
@@ -206,7 +206,7 @@ func TestOwnerUnreachable(t *testing.T) {
 		}
 		return deadOwner(ctx)
 	}
-	fw := &fakeWorkers{workers: []docker.Worker{worker("a", time.Minute, "live", 1)}}
+	fw := &fakeWorkers{workers: []worker.Info{workerInfo("a", time.Minute, "live", 1)}}
 	fr := &fakeRunners{runners: map[int64]github.Runner{1: online}}
 	rp := newTestReaper(fw, fr, owner)
 	ctx := context.Background()
@@ -234,7 +234,7 @@ func TestSweepErrors(t *testing.T) {
 		t.Errorf("err = %v, want list error", err)
 	}
 
-	fw := &fakeWorkers{workers: []docker.Worker{worker("a", 7*time.Hour, "x", 0), worker("b", 7*time.Hour, "x", 0)}, removeErr: errors.New("busy")}
+	fw := &fakeWorkers{workers: []worker.Info{workerInfo("a", 7*time.Hour, "x", 0), workerInfo("b", 7*time.Hour, "x", 0)}, removeErr: errors.New("busy")}
 	got, err := newTestReaper(fw, fr, liveOwner("x")).Sweep(context.Background())
 	if err != nil || len(got.Removed) != 0 {
 		t.Errorf("got %v, %v; want no removals and no error", reasons(got), err)
@@ -272,7 +272,7 @@ func TestHealthOwner(t *testing.T) {
 
 // TestRunStopsOnCancel checks Run sweeps at start and returns once ctx is cancelled.
 func TestRunStopsOnCancel(t *testing.T) {
-	fw := &fakeWorkers{workers: []docker.Worker{worker("a", 7*time.Hour, "x", 0)}}
+	fw := &fakeWorkers{workers: []worker.Info{workerInfo("a", 7*time.Hour, "x", 0)}}
 	rp := newTestReaper(fw, &fakeRunners{}, liveOwner("x"))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
