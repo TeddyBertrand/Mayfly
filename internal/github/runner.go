@@ -7,11 +7,17 @@ import (
 	"net/http"
 )
 
+// The statuses GitHub reports for a self-hosted runner registration.
+const (
+	RunnerStatusOnline  = "online"
+	RunnerStatusOffline = "offline"
+)
+
 // Runner is a self-hosted runner registration as GitHub reports it.
 type Runner struct {
 	// Found is false when GitHub has no registration with that ID (404).
 	Found bool
-	// Status is "online" or "offline".
+	// Status is RunnerStatusOnline or RunnerStatusOffline.
 	Status string
 	Busy   bool
 }

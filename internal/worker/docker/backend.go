@@ -8,8 +8,16 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/TeddyBertrand/Mayfly/internal/logkey"
 	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
+)
+
+const (
+	// runnerCommand starts the runner in the official image; with a JIT config it takes one job and exits.
+	runnerCommand = "./run.sh"
+	// envJITConfig is the variable the runner reads its JIT config from, which keeps it out of the process list.
+	envJITConfig = "ACTIONS_RUNNER_INPUT_JITCONFIG"
 )
 
 const (
@@ -57,14 +65,14 @@ type Options struct {
 // New returns a Backend that runs workers as configured by opts.
 func New(opts Options, logger *slog.Logger) *Backend {
 	return &Backend{
-		eng: newSocketEngine(opts.Socket), image: opts.Image, network: opts.Network, cmd: []string{"./run.sh"},
+		eng: newSocketEngine(opts.Socket), image: opts.Image, network: opts.Network, cmd: []string{runnerCommand},
 		timeout: opts.Timeout, logger: logger, retry: retry.Default, owner: opts.Owner,
 	}
 }
 
 // Run starts a runner container for spec, waits for it to finish, and always removes it.
 func (b *Backend) Run(ctx context.Context, spec worker.Spec) error {
-	log := b.logger.With("job_id", spec.JobID, "runner_name", spec.RunnerName, "image", b.image)
+	log := b.logger.With(logkey.JobID, spec.JobID, logkey.RunnerName, spec.RunnerName, logkey.Image, b.image)
 	ctx, cancel := context.WithTimeout(ctx, b.timeout)
 	defer cancel()
 
@@ -76,12 +84,12 @@ func (b *Backend) Run(ctx context.Context, spec worker.Spec) error {
 		id, waitDone, stopWait, err = b.start(ctx, spec, log)
 		return err
 	}, func(attempt int, wait time.Duration, err error) {
-		log.Warn("worker start failed, retrying", "attempt", attempt, "wait", wait.String(), "err", err)
+		log.Warn("worker start failed, retrying", logkey.Attempt, attempt, logkey.Wait, wait.String(), logkey.Err, err)
 	})
 	if err != nil {
 		return err
 	}
-	log = log.With("container_id", shortID(id))
+	log = log.With(logkey.ContainerID, worker.ShortID(id))
 	defer stopWait()
 	defer b.remove(id, log)
 	log.Info("worker started")
@@ -89,14 +97,14 @@ func (b *Backend) Run(ctx context.Context, spec worker.Spec) error {
 	exit, err := waitDone()
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			log.Warn("worker timed out", "timeout", b.timeout.String())
+			log.Warn("worker timed out", logkey.Timeout, b.timeout.String())
 			return fmt.Errorf("worker timed out after %s: %w", b.timeout, ctx.Err())
 		}
-		log.Error("worker wait failed", "err", err)
+		log.Error("worker wait failed", logkey.Err, err)
 		return err
 	}
 	// The runner exits 0 even when it fails; the job result is reported to GitHub, not here.
-	log.Info("worker finished", "exit_code", exit)
+	log.Info("worker finished", logkey.ExitCode, exit)
 	return nil
 }
 
@@ -106,7 +114,7 @@ func (b *Backend) containerSpec(spec worker.Spec) containerSpec {
 	cs := containerSpec{
 		Image: b.image,
 		Cmd:   b.cmd,
-		Env:   []string{"ACTIONS_RUNNER_INPUT_JITCONFIG=" + spec.JITConfig},
+		Env:   []string{envJITConfig + "=" + spec.JITConfig},
 		Labels: map[string]string{
 			LabelJobID:          strconv.FormatInt(spec.JobID, 10),
 			LabelRunnerName:     spec.RunnerName,
@@ -126,24 +134,24 @@ func (b *Backend) containerSpec(spec worker.Spec) containerSpec {
 // On failure it leaves nothing behind, so the next attempt starts clean.
 func (b *Backend) start(ctx context.Context, spec worker.Spec, log *slog.Logger) (string, func() (int, error), context.CancelFunc, error) {
 	if err := b.ensureImage(ctx, log); err != nil {
-		log.Error("worker image unavailable", "err", err)
+		log.Error("worker image unavailable", logkey.Err, err)
 		return "", nil, nil, err
 	}
 	if err := b.ensureNetwork(ctx, log); err != nil {
-		log.Error("worker network unavailable", "err", err, "network", b.network)
+		log.Error("worker network unavailable", logkey.Err, err, logkey.Network, b.network)
 		return "", nil, nil, err
 	}
 
 	id, err := b.eng.createContainer(ctx, spec.RunnerName, b.containerSpec(spec))
 	if err != nil {
-		log.Error("worker create failed", "err", err)
+		log.Error("worker create failed", logkey.Err, err)
 		return "", nil, nil, err
 	}
 
 	// The wait request gets its own context so a failed attempt can close it instead of leaking the connection.
 	wctx, stopWait := context.WithCancel(ctx)
 	fail := func(msg string, err error) (string, func() (int, error), context.CancelFunc, error) {
-		log.Error(msg, "err", err, "container_id", shortID(id))
+		log.Error(msg, logkey.Err, err, logkey.ContainerID, worker.ShortID(id))
 		stopWait()
 		b.remove(id, log)
 		return "", nil, nil, err
@@ -178,7 +186,7 @@ func (b *Backend) ensureNetwork(ctx context.Context, log *slog.Logger) error {
 	if err != nil || ok {
 		return err
 	}
-	log.Info("creating worker network", "network", b.network)
+	log.Info("creating worker network", logkey.Network, b.network)
 	return b.eng.createNetwork(ctx, b.network)
 }
 
@@ -187,16 +195,8 @@ func (b *Backend) remove(id string, log *slog.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), removeTimeout)
 	defer cancel()
 	if err := b.eng.removeContainer(ctx, id); err != nil {
-		log.Error("worker remove failed, left for the reaper", "err", err)
+		log.Error("worker remove failed, left for the reaper", logkey.Err, err)
 		return
 	}
 	log.Info("worker removed")
-}
-
-// shortID returns the 12-character form Docker shows for container IDs.
-func shortID(id string) string {
-	if len(id) > 12 {
-		return id[:12]
-	}
-	return id
 }

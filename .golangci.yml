@@ -8,6 +8,16 @@ linters:
     - errcheck
     - ineffassign
     - unused
+    # No magic values (docs/go-conventions.md): unnamed numbers and repeated strings.
+    - mnd
+    - goconst
+  exclusions:
+    rules:
+      # Test fixtures stay literal; a name in a test table hides what is being tested.
+      - path: _test\.go
+        linters:
+          - mnd
+          - goconst
 
 formatters:
   enable:

@@ -6,7 +6,20 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/TeddyBertrand/Mayfly/internal/logkey"
 )
+
+// shortIDLen is the length of the short form Docker shows for container IDs.
+const shortIDLen = 12
+
+// ShortID returns the first shortIDLen characters of a worker ID, the form Docker shows; shorter IDs are returned as is.
+func ShortID(id string) string {
+	if len(id) > shortIDLen {
+		return id[:shortIDLen]
+	}
+	return id
+}
 
 // Spec describes one ephemeral worker. JITConfig is a credential and must not be logged.
 type Spec struct {
@@ -21,7 +34,7 @@ type Spec struct {
 
 // LogValue hides the JIT config so a Spec can be logged safely.
 func (s Spec) LogValue() slog.Value {
-	return slog.GroupValue(slog.Int64("job_id", s.JobID), slog.String("runner_name", s.RunnerName))
+	return slog.GroupValue(slog.Int64(logkey.JobID, s.JobID), slog.String(logkey.RunnerName, s.RunnerName))
 }
 
 // String hides the JIT config so a Spec cannot leak through fmt.

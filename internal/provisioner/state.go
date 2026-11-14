@@ -59,7 +59,7 @@ func target(action workflow.Action, conclusion string, cur State) State {
 	if action == workflow.ActionInProgress {
 		return Running
 	}
-	if cur == Running || conclusion != "cancelled" {
+	if cur == Running || conclusion != workflow.ConclusionCancelled {
 		return Done
 	}
 	return Dropped

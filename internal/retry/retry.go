@@ -18,8 +18,18 @@ type Policy struct {
 	jitter func(n int64) int64
 }
 
-// Default is the policy for GitHub and Docker calls: 5 attempts, waits capped at 1s, 2s, 4s, 8s.
-var Default = Policy{Attempts: 5, Base: time.Second, Max: 30 * time.Second}
+// The Default policy's values: 5 attempts wait about 1s, 2s, 4s and 8s in between, under the 30s cap.
+const (
+	defaultAttempts = 5
+	defaultBase     = time.Second
+	defaultMax      = 30 * time.Second
+)
+
+// backoffFactor is how much the wait limit grows after each failed attempt (exponential backoff).
+const backoffFactor = 2
+
+// Default is the policy for GitHub and Docker calls.
+var Default = Policy{Attempts: defaultAttempts, Base: defaultBase, Max: defaultMax}
 
 // Notify is called before each wait with the attempt that just failed, the wait, and its error.
 type Notify func(attempt int, wait time.Duration, err error)
@@ -65,7 +75,7 @@ func Do(ctx context.Context, p Policy, fn func(context.Context) error, notify No
 func (p Policy) backoff(attempt int) time.Duration {
 	limit := p.Base
 	for i := 1; i < attempt && limit < p.Max; i++ {
-		limit *= 2
+		limit *= backoffFactor
 	}
 	limit = min(limit, p.Max)
 	return time.Duration(p.rand(int64(limit)))

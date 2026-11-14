@@ -14,8 +14,22 @@ import (
 	"net/url"
 )
 
-// apiVersion is pinned so behaviour does not change with the daemon; every Docker since 2023 supports it.
-const apiVersion = "v1.44"
+const (
+	// apiVersion is pinned so behaviour does not change with the daemon; every Docker since 2023 supports it.
+	apiVersion = "v1.44"
+	// socketBase is the URL prefix of every request; the Unix dialer ignores the host, which only makes the URL valid.
+	socketBase = "http://docker/"
+	// maxErrorBody caps how much of an error response is read for its message.
+	maxErrorBody = 64 << 10
+
+	// networkDriver is the driver of the worker network.
+	networkDriver = "bridge"
+	// bridgeNameOption names the network's Linux bridge interface, which host firewall rules match.
+	bridgeNameOption = "com.docker.network.bridge.name"
+	// labelRole and roleWorkers mark the worker network as Mayfly's.
+	labelRole   = "mayfly.role"
+	roleWorkers = "workers"
+)
 
 // engine is a minimal Docker Engine API client.
 type engine struct {
@@ -65,8 +79,7 @@ func newSocketEngine(path string) *engine {
 			return (&net.Dialer{}).DialContext(ctx, "unix", path)
 		},
 	}
-	// The host part is ignored by the Unix dialer; "docker" just makes the URL valid.
-	return &engine{http: &http.Client{Transport: tr}, base: "http://docker/" + apiVersion}
+	return &engine{http: &http.Client{Transport: tr}, base: socketBase + apiVersion}
 }
 
 // containerSpec is the create request body: the subset of fields Mayfly sets.
@@ -186,9 +199,9 @@ func (e *engine) networkExists(ctx context.Context, name string) (bool, error) {
 func (e *engine) createNetwork(ctx context.Context, name string) error {
 	body := map[string]any{
 		"Name":    name,
-		"Driver":  "bridge",
-		"Options": map[string]string{"com.docker.network.bridge.name": name},
-		"Labels":  map[string]string{"mayfly.role": "workers"},
+		"Driver":  networkDriver,
+		"Options": map[string]string{bridgeNameOption: name},
+		"Labels":  map[string]string{labelRole: roleWorkers},
 	}
 	err := e.call(ctx, "create network", http.MethodPost, "/networks/create", body, nil, http.StatusCreated)
 	var ee *engineError
@@ -252,6 +265,6 @@ func readEngineError(op string, resp *http.Response) error {
 	var msg struct {
 		Message string `json:"message"`
 	}
-	_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&msg)
+	_ = json.NewDecoder(io.LimitReader(resp.Body, maxErrorBody)).Decode(&msg)
 	return &engineError{Op: op, Status: resp.StatusCode, Message: msg.Message}
 }

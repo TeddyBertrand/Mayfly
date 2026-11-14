@@ -13,6 +13,9 @@ const (
 	ActionCompleted  Action = "completed"
 )
 
+// ConclusionCancelled is the conclusion of a completed job that was cancelled, which may never have started.
+const ConclusionCancelled = "cancelled"
+
 // Job is the part of a workflow job the provisioner needs to start a worker and follow it.
 type Job struct {
 	ID             int64

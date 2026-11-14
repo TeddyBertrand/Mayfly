@@ -72,7 +72,7 @@ func cancelled(id int64) workflow.Job {
 func startOne(t *testing.T) (*Provisioner, *fakeJIT, *fakeBackend, *syncBuffer) {
 	t.Helper()
 	jit, b := &fakeJIT{}, newFakeBackend(true)
-	p, logs := newTestProvisioner(jit, b, 1, 10)
+	p, logs := newTestProvisioner(jit, b, Options{Workers: 1, QueueSize: 10})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go p.Run(ctx)
@@ -178,7 +178,7 @@ func TestOutOfOrderEvents(t *testing.T) {
 
 // TestDuplicateQueuedIgnored checks a second queued event for a tracked job adds no worker.
 func TestDuplicateQueuedIgnored(t *testing.T) {
-	p, _ := newTestProvisioner(&fakeJIT{}, newFakeBackend(true), 1, 10)
+	p, _ := newTestProvisioner(&fakeJIT{}, newFakeBackend(true), Options{Workers: 1, QueueSize: 10})
 	for range 2 {
 		if err := p.Enqueue(testJob); err != nil {
 			t.Fatal(err)
@@ -191,7 +191,7 @@ func TestDuplicateQueuedIgnored(t *testing.T) {
 
 // TestQueueFullStopsTracking checks a job rejected by a full queue leaves no tracked entry.
 func TestQueueFullStopsTracking(t *testing.T) {
-	p, _ := newTestProvisioner(&fakeJIT{}, newFakeBackend(true), 1, 1)
+	p, _ := newTestProvisioner(&fakeJIT{}, newFakeBackend(true), Options{Workers: 1, QueueSize: 1})
 	_ = p.Enqueue(jobN(0))
 	if err := p.Enqueue(jobN(1)); err == nil {
 		t.Fatal("second enqueue accepted, want ErrQueueFull")
@@ -203,7 +203,7 @@ func TestQueueFullStopsTracking(t *testing.T) {
 
 // TestUpdateUntracked checks an event for a job this process never saw is logged and ignored.
 func TestUpdateUntracked(t *testing.T) {
-	p, logs := newTestProvisioner(&fakeJIT{}, newFakeBackend(true), 1, 1)
+	p, logs := newTestProvisioner(&fakeJIT{}, newFakeBackend(true), Options{Workers: 1, QueueSize: 1})
 	p.Update(workflow.ActionCompleted, cancelled(5))
 	if !strings.Contains(logs.String(), "update for untracked job ignored") {
 		t.Errorf("untracked update not logged:\n%s", logs.String())

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
+	"github.com/TeddyBertrand/Mayfly/internal/logkey"
 	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
 	"github.com/TeddyBertrand/Mayfly/internal/workflow"
@@ -71,7 +72,7 @@ func New(jit JITIssuer, backend worker.Backend, opts Options, logger *slog.Logge
 // when it is full. A job that is already tracked is ignored.
 func (p *Provisioner) Enqueue(job workflow.Job) error {
 	if !p.jobs.add(job.ID) {
-		p.logger.Info("job already tracked, queued event ignored", "job_id", job.ID, "repo", job.Repo)
+		p.logger.Info("job already tracked, queued event ignored", logkey.JobID, job.ID, logkey.Repo, job.Repo)
 		return nil
 	}
 	select {
@@ -86,15 +87,15 @@ func (p *Provisioner) Enqueue(job workflow.Job) error {
 // Update applies an in_progress or completed event to the tracked job it concerns, without blocking.
 // Cancelling a job that has not started stops its worker; events for untracked jobs are ignored.
 func (p *Provisioner) Update(action workflow.Action, job workflow.Job) {
-	log := p.logger.With("action", action, "job_id", job.ID, "repo", job.Repo, "runner_name", job.RunnerName)
+	log := p.logger.With(logkey.Action, action, logkey.JobID, job.ID, logkey.Repo, job.Repo, logkey.RunnerName, job.RunnerName)
 	id, from, to, err := p.jobs.update(action, job)
 	switch {
 	case errors.Is(err, errUntracked):
 		log.Info("update for untracked job ignored")
 	case err != nil:
-		log.Warn("job update rejected", "tracked_job_id", id, "err", err)
+		log.Warn("job update rejected", logkey.TrackedJobID, id, logkey.Err, err)
 	default:
-		log.Info("job state changed", "tracked_job_id", id, "from", from.String(), "to", to.String())
+		log.Info("job state changed", logkey.TrackedJobID, id, logkey.From, from.String(), logkey.To, to.String())
 	}
 }
 
@@ -113,7 +114,7 @@ func (p *Provisioner) Run(ctx context.Context) {
 				case job := <-p.queue:
 					// select picks randomly when both cases are ready, so re-check before provisioning.
 					if ctx.Err() != nil {
-						p.logger.Warn("queued job dropped at shutdown", "job_id", job.ID, "repo", job.Repo)
+						p.logger.Warn("queued job dropped at shutdown", logkey.JobID, job.ID, logkey.Repo, job.Repo)
 						return
 					}
 					p.handle(ctx, job)
@@ -121,13 +122,13 @@ func (p *Provisioner) Run(ctx context.Context) {
 			}
 		}()
 	}
-	p.logger.Info("provisioner started", "workers", p.workers, "queue_size", cap(p.queue), "labels", p.labels)
+	p.logger.Info("provisioner started", logkey.Workers, p.workers, logkey.QueueSize, cap(p.queue), logkey.Labels, p.labels)
 	wg.Wait()
 
 	for {
 		select {
 		case job := <-p.queue:
-			p.logger.Warn("queued job dropped at shutdown", "job_id", job.ID, "repo", job.Repo)
+			p.logger.Warn("queued job dropped at shutdown", logkey.JobID, job.ID, logkey.Repo, job.Repo)
 		default:
 			p.logger.Info("provisioner stopped")
 			return
@@ -138,7 +139,7 @@ func (p *Provisioner) Run(ctx context.Context) {
 // handle registers a JIT runner for job and runs a worker with it until the worker is gone.
 // It stops early if the job is dropped, and stops tracking the job when it returns.
 func (p *Provisioner) handle(ctx context.Context, job workflow.Job) {
-	log := p.logger.With("job_id", job.ID, "repo", job.Repo)
+	log := p.logger.With(logkey.JobID, job.ID, logkey.Repo, job.Repo)
 	start := time.Now()
 	defer p.jobs.remove(job.ID)
 
@@ -146,7 +147,7 @@ func (p *Provisioner) handle(ctx context.Context, job workflow.Job) {
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if err := p.jobs.begin(job.ID, cancel); err != nil {
-		log.Info("job dropped before start, skipped", "reason", err)
+		log.Info("job dropped before start, skipped", logkey.Reason, err)
 		return
 	}
 
@@ -167,22 +168,22 @@ func (p *Provisioner) handle(ctx context.Context, job workflow.Job) {
 		name, cfg = n, c
 		return nil
 	}, func(attempt int, wait time.Duration, err error) {
-		log.Warn("jit config failed, retrying", "attempt", attempt, "wait", wait.String(), "err", err)
+		log.Warn("jit config failed, retrying", logkey.Attempt, attempt, logkey.Wait, wait.String(), logkey.Err, err)
 	})
 	if err != nil {
 		if p.dropped(ctx, wctx) {
 			log.Info("job dropped while registering runner")
 			return
 		}
-		log.Error("jit config failed", "err", err)
+		log.Error("jit config failed", logkey.Err, err)
 		return
 	}
-	log = log.With("runner_name", name)
-	log.Info("runner registered", "runner_id", cfg.RunnerID, "elapsed", time.Since(start).String())
+	log = log.With(logkey.RunnerName, name)
+	log.Info("runner registered", logkey.RunnerID, cfg.RunnerID, logkey.Elapsed, time.Since(start).String())
 
 	if err := p.jobs.ready(job.ID, name); err != nil {
 		// The registration is left on GitHub; the reaper removes stale runners.
-		log.Info("job dropped after runner registration, worker not started", "reason", err)
+		log.Info("job dropped after runner registration, worker not started", logkey.Reason, err)
 		return
 	}
 
@@ -194,10 +195,10 @@ func (p *Provisioner) handle(ctx context.Context, job workflow.Job) {
 			log.Info("worker stopped, job cancelled before it started")
 			return
 		}
-		log.Error("worker failed", "err", err)
+		log.Error("worker failed", logkey.Err, err)
 		return
 	}
-	log.Info("job done", "elapsed", time.Since(start).String())
+	log.Info("job done", logkey.Elapsed, time.Since(start).String())
 }
 
 // dropped reports whether wctx was cancelled by a job update rather than by shutdown of ctx.
