@@ -21,7 +21,7 @@ func TestLoadReaper(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Interval != time.Minute || got.MaxAge != 6*time.Hour+15*time.Minute || got.Grace != 2*time.Minute ||
-		got.MissedProbes != 2 || got.HealthURL != "http://127.0.0.1:8080/healthz" || got.App.ID != 1 || got.Docker.Socket != DefaultDockerSocket ||
+		got.MissedProbes != 2 || got.HealthURL != "http://127.0.0.1:8081/healthz" || got.App.ID != 1 || got.Docker.Socket != DefaultDockerSocket ||
 		got.StaleAfter != 10*time.Minute || got.StuckAfter != 10*time.Minute || len(got.RunnerLabels) != 1 || got.RunnerLabels[0] != "mayfly" {
 		t.Errorf("defaults = %+v", got)
 	}

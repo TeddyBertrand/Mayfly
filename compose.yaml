@@ -33,6 +33,8 @@ services:
     environment:
       <<: *env
       MAYFLY_LISTEN_ADDR: ":8080"
+      # Ops endpoints (/healthz, later /metrics) for the reaper over the Compose network; never published (decision 018).
+      MAYFLY_OPS_ADDR: ":8081"
       MAYFLY_WEBHOOK_SECRET_FILE: /run/secrets/webhook_secret
       MAYFLY_WORKERS: ${MAYFLY_WORKERS:-2}
       MAYFLY_QUEUE_SIZE: ${MAYFLY_QUEUE_SIZE:-100}
@@ -52,7 +54,7 @@ services:
     entrypoint: ["/usr/local/bin/reaper"]
     environment:
       <<: *env
-      MAYFLY_HEALTH_URL: http://mayfly:8080/healthz
+      MAYFLY_HEALTH_URL: http://mayfly:8081/healthz
       MAYFLY_REAPER_INTERVAL: ${MAYFLY_REAPER_INTERVAL:-1m}
     depends_on:
       mayfly:

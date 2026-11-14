@@ -16,5 +16,6 @@ RUN for cmd in mayfly reaper setwebhook; do \
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/ /usr/local/bin/
 USER nonroot:nonroot
-EXPOSE 8080
+# 8080 is the webhook; 8081 the ops endpoints, for the Compose network only (decision 018). EXPOSE publishes nothing.
+EXPOSE 8080 8081
 ENTRYPOINT ["/usr/local/bin/mayfly"]
