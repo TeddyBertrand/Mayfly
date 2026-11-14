@@ -40,11 +40,26 @@ type Backend struct {
 
 var _ worker.Backend = (*Backend)(nil)
 
-// New returns a Backend using the daemon on socket, running image on network (empty for Docker's default),
-// and killing workers after timeout. Every container is labelled with owner, the instance ID of this
-// process, so the reaper can spot orphans.
-func New(socket, image, network string, timeout time.Duration, owner string, logger *slog.Logger) *Backend {
-	return &Backend{eng: newSocketEngine(socket), image: image, network: network, cmd: []string{"./run.sh"}, timeout: timeout, logger: logger, retry: retry.Default, owner: owner}
+// Options configure a Backend.
+type Options struct {
+	// Socket is the path of the Docker daemon socket.
+	Socket string
+	// Image is the runner image every worker runs.
+	Image string
+	// Network is the Docker network workers join; empty means Docker's default.
+	Network string
+	// Timeout is how long a worker may run before it is killed.
+	Timeout time.Duration
+	// Owner is the instance ID of this process, set on every container so the reaper can spot orphans.
+	Owner string
+}
+
+// New returns a Backend that runs workers as configured by opts.
+func New(opts Options, logger *slog.Logger) *Backend {
+	return &Backend{
+		eng: newSocketEngine(opts.Socket), image: opts.Image, network: opts.Network, cmd: []string{"./run.sh"},
+		timeout: opts.Timeout, logger: logger, retry: retry.Default, owner: opts.Owner,
+	}
 }
 
 // Run starts a runner container for spec, waits for it to finish, and always removes it.
