@@ -65,16 +65,17 @@ for _ in $(seq 60); do
 	sleep 0.5
 done
 
-# healthz resolves the new hostname through DNS-over-HTTPS, because an early lookup can leave
-# a cached "no such domain" in the local resolver for a while.
-healthz() {
-	curl -fsS -m 5 --doh-url https://1.1.1.1/dns-query "$url/healthz" >/dev/null 2>&1
+# reachable checks the tunnel reaches mayfly: only mayfly answers GET /webhook with 405 (POST only);
+# the tunnel answers 502 or 530 when it cannot (decision 018). DNS-over-HTTPS avoids a cached
+# "no such domain" that an early lookup can leave in the local resolver for a while.
+reachable() {
+	[[ "$(curl -sS -o /dev/null -w '%{http_code}' -m 5 --doh-url https://1.1.1.1/dns-query "$url/webhook" 2>/dev/null)" == 405 ]]
 }
 for _ in $(seq 60); do
-	healthz && break
+	reachable && break
 	sleep 1
 done
-healthz || fail "$url/healthz is not reachable, see $work/tunnel.log"
+reachable || fail "$url/webhook is not reachable, see $work/tunnel.log"
 
 "$work/setwebhook" "$url/webhook" || fail "could not set the App webhook URL; set it by hand to $url/webhook"
 

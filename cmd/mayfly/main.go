@@ -1,10 +1,12 @@
-// Command mayfly runs the receiver and the provisioner in one process, joined by an in-memory job queue.
+// Command mayfly runs the receiver and the provisioner in one process, joined by an in-memory job queue,
+// with the ops endpoints on their own listener.
 package main
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/TeddyBertrand/Mayfly/internal/config"
 	"github.com/TeddyBertrand/Mayfly/internal/github"
+	"github.com/TeddyBertrand/Mayfly/internal/ops"
 	"github.com/TeddyBertrand/Mayfly/internal/provisioner"
 	"github.com/TeddyBertrand/Mayfly/internal/receiver"
 	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
@@ -49,13 +52,9 @@ func printVersion(args []string, w io.Writer) bool {
 	return false
 }
 
-// runHealthcheck probes this host's receiver at MAYFLY_LISTEN_ADDR and returns the process exit code.
+// runHealthcheck probes this host's ops listener at MAYFLY_OPS_ADDR and returns the process exit code.
 func runHealthcheck() int {
-	addr := os.Getenv("MAYFLY_LISTEN_ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
-	url, err := healthURL(addr)
+	url, err := healthURL(config.LoadOpsAddr(os.Getenv))
 	if err == nil {
 		err = healthcheck(url, 3*time.Second)
 	}
@@ -114,9 +113,16 @@ func run(logger *slog.Logger) error {
 		close(provDone)
 	}()
 
-	err = receiver.Run(ctx, rcfg, logger, receiver.Handoff{OnQueued: prov.Enqueue, OnUpdate: prov.Update, Instance: instance})
-	// Stop the provisioner too if the receiver failed on its own, e.g. the port was taken.
+	opsErr := make(chan error, 1)
+	go func() {
+		opsErr <- ops.Run(ctx, config.LoadOpsAddr(os.Getenv), rcfg.ShutdownTimeout, instance, logger.With("server", "ops"))
+		// Stop everything if the ops server failed on its own, e.g. the port was taken.
+		stop()
+	}()
+
+	err = receiver.Run(ctx, rcfg, logger.With("server", "webhook"), receiver.Handoff{OnQueued: prov.Enqueue, OnUpdate: prov.Update})
+	// Stop the provisioner and the ops server too if the receiver failed on its own.
 	stop()
 	<-provDone
-	return err
+	return errors.Join(err, <-opsErr)
 }

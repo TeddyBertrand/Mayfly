@@ -46,8 +46,8 @@ These are the same checks CI runs (`make fmt-check test build` in [ci.yml](../.g
 
 ## Run targets
 
-- **`dev`**: runs [scripts/dev.sh](../scripts/dev.sh). It builds mayfly, starts it on `127.0.0.1:8080`, opens a cloudflared quick tunnel, waits until `/healthz` answers through the tunnel, and points the GitHub App's webhook at the new URL. Ctrl-C stops everything gracefully: mayfly removes its own workers. A quick tunnel sometimes fails to come up on the first try (`healthz is not reachable`); run it again.
-- **`reaper`**: runs `go run ./cmd/reaper` in the foreground. It sweeps at start, then every minute, and logs one `orphaned worker removed` line per container it removes, with the reason. It finds mayfly through `http://127.0.0.1:8080/healthz`, which is where `make dev` listens. Run it in its own terminal, so it keeps running while mayfly is crashed and restarted.
+- **`dev`**: runs [scripts/dev.sh](../scripts/dev.sh). It builds mayfly, starts it on `127.0.0.1:8080`, opens a cloudflared quick tunnel, waits until mayfly answers through the tunnel (`GET /webhook` returns 405, decision 018), and points the GitHub App's webhook at the new URL. Ctrl-C stops everything gracefully: mayfly removes its own workers. A quick tunnel sometimes fails to come up on the first try (`webhook is not reachable`); run it again.
+- **`reaper`**: runs `go run ./cmd/reaper` in the foreground. It sweeps at start, then every minute, and logs one `orphaned worker removed` line per container it removes, with the reason. It finds mayfly through `http://127.0.0.1:8081/healthz`, the ops listener `make dev` opens on loopback. Run it in its own terminal, so it keeps running while mayfly is crashed and restarted.
 
 ## Job targets
 
@@ -94,4 +94,4 @@ The `mayfly-long` run on GitHub then fails ("lost communication with the server"
 
 - **Stale registrations wait 10 minutes.** After a crash the killed runner stays registered as `offline` until the reaper has seen it stale for `MAYFLY_REAPER_STALE_AFTER`, so `make check-clean` fails until then. To check faster, run `MAYFLY_REAPER_STALE_AFTER=1m make reaper`.
 - **Stuck jobs are only logged.** A job queued for more than `MAYFLY_REAPER_STUCK_AFTER` is logged as `job stuck in queued` with a reason and its URL; rerunning it is up to you (decision 013).
-- **One mayfly at a time.** `crash` kills every mayfly started by `make dev`, and the reaper only knows the instance on `127.0.0.1:8080`.
+- **One mayfly at a time.** `crash` kills every mayfly started by `make dev`, and the reaper only knows the instance whose ops listener is on `127.0.0.1:8081`.

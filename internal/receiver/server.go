@@ -1,12 +1,10 @@
 package receiver
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
@@ -19,35 +17,14 @@ type Webhook struct {
 	Secret []byte
 	Labels []string
 	Dedupe Deduper
-	// OnQueued hands a job off without blocking; an error means it was not accepted.
-	OnQueued func(workflow.Job) error
-	// OnUpdate passes an in_progress or completed job on without blocking.
-	OnUpdate func(action workflow.Action, job workflow.Job)
-	// Instance is reported on /healthz.
-	Instance string
+	Handoff
 }
 
-// Health is the /healthz response body.
-type Health struct {
-	Status   string `json:"status"`
-	Instance string `json:"instance"`
-}
-
-// NewHandler returns the receiver routes: GET /healthz and POST /webhook.
+// NewHandler returns the receiver's only route, POST /webhook. Ops endpoints live on their own listener (decision 018).
 func NewHandler(logger *slog.Logger, wh Webhook) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealthz(wh.Instance))
 	mux.HandleFunc("POST /webhook", handleWebhook(logger, wh))
 	return mux
-}
-
-// handleHealthz reports that the process is up and which instance it is; it must not depend on external services.
-func handleHealthz(instance string) http.HandlerFunc {
-	body, _ := json.Marshal(Health{Status: "ok", Instance: instance})
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
-	}
 }
 
 // handleWebhook reads the body under a size limit, rejects it unless signed, then dispatches it.
@@ -134,15 +111,4 @@ func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte)
 	}
 	log.Info("workflow_job queued", "labels", job.Labels)
 	return http.StatusAccepted
-}
-
-// newServer wraps handler in an http.Server with explicit timeouts against slow clients.
-func newServer(handler http.Handler) *http.Server {
-	return &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
 }

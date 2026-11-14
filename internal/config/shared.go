@@ -16,7 +16,19 @@ const (
 	DefaultWorkerImage = "ghcr.io/actions/actions-runner:2.338.2"
 	// DefaultWorkerTimeout matches GitHub's maximum job duration.
 	DefaultWorkerTimeout = 6 * time.Hour
+	// DefaultOpsAddr keeps the ops endpoints on loopback unless a deploy says otherwise (decision 018).
+	DefaultOpsAddr = "127.0.0.1:8081"
+	// DefaultHealthURL is where the reaper finds mayfly's /healthz when both run on one host.
+	DefaultHealthURL = "http://" + DefaultOpsAddr + "/healthz"
 )
+
+// LoadOpsAddr returns the address of the ops listener, which serves /healthz and must never be published.
+func LoadOpsAddr(getenv func(string) string) string {
+	if v := getenv("MAYFLY_OPS_ADDR"); v != "" {
+		return v
+	}
+	return DefaultOpsAddr
+}
 
 // GitHubApp holds the GitHub App credentials and API location. Key is PEM bytes and must not be logged.
 type GitHubApp struct {

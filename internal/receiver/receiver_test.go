@@ -28,11 +28,13 @@ func testWebhook(secret []byte, onQueued func(workflow.Job)) Webhook {
 		onQueued = func(workflow.Job) {}
 	}
 	return Webhook{
-		Secret:   secret,
-		Labels:   []string{"mayfly"},
-		Dedupe:   NewMemoryDeduper(time.Hour),
-		OnQueued: func(j workflow.Job) error { onQueued(j); return nil },
-		OnUpdate: func(workflow.Action, workflow.Job) {},
+		Secret: secret,
+		Labels: []string{"mayfly"},
+		Dedupe: NewMemoryDeduper(time.Hour),
+		Handoff: Handoff{
+			OnQueued: func(j workflow.Job) error { onQueued(j); return nil },
+			OnUpdate: func(workflow.Action, workflow.Job) {},
+		},
 	}
 }
 
@@ -154,7 +156,7 @@ func TestHandlerRoutes(t *testing.T) {
 		path   string
 		want   int
 	}{
-		{"healthz ok", http.MethodGet, "/healthz", http.StatusOK},
+		{"no healthz on the webhook listener", http.MethodGet, "/healthz", http.StatusNotFound},
 		{"webhook unsigned", http.MethodPost, "/webhook", http.StatusUnauthorized},
 		{"webhook wrong method", http.MethodGet, "/webhook", http.StatusMethodNotAllowed},
 		{"unknown path", http.MethodGet, "/nope", http.StatusNotFound},
@@ -207,38 +209,23 @@ func TestWebhookSignatureAndLimit(t *testing.T) {
 	}
 }
 
-// TestServeShutsDownOnCancel starts a real server, probes /healthz, then cancels and expects a clean return.
-func TestServeShutsDownOnCancel(t *testing.T) {
+// TestRunFailsWhenPortTaken checks that Run returns an error at once when its address is already in use.
+func TestRunFailsWhenPortTaken(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.ReceiverConfig{ShutdownTimeout: 2 * time.Second}
+	defer func() { _ = ln.Close() }()
+	cfg := config.ReceiverConfig{ListenAddr: ln.Addr().String(), ShutdownTimeout: time.Second}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() {
-		done <- serve(ctx, ln, cfg, discardLogger(), Handoff{OnQueued: func(workflow.Job) error { return nil }, OnUpdate: func(workflow.Action, workflow.Job) {}})
-	}()
-
-	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := resp.Body.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("healthz status = %d", resp.StatusCode)
-	}
-
-	cancel()
+	go func() { done <- Run(context.Background(), cfg, discardLogger(), testWebhook(nil, nil).Handoff) }()
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatalf("serve returned %v, want nil", err)
+		if err == nil {
+			t.Fatal("Run returned nil on a taken port")
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("serve did not return after cancel")
+		t.Fatal("Run did not return on a taken port")
 	}
 }

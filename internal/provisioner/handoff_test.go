@@ -30,11 +30,10 @@ func TestWebhookDoesNotWaitOnProvisioning(t *testing.T) {
 
 	secret := []byte("test-secret")
 	h := receiver.NewHandler(slog.New(slog.NewTextHandler(io.Discard, nil)), receiver.Webhook{
-		Secret:   secret,
-		Labels:   []string{"mayfly"},
-		Dedupe:   receiver.NewMemoryDeduper(time.Hour),
-		OnQueued: p.Enqueue,
-		OnUpdate: p.Update,
+		Secret:  secret,
+		Labels:  []string{"mayfly"},
+		Dedupe:  receiver.NewMemoryDeduper(time.Hour),
+		Handoff: receiver.Handoff{OnQueued: p.Enqueue, OnUpdate: p.Update},
 	})
 
 	mac := hmac.New(sha256.New, secret)

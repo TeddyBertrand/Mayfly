@@ -45,7 +45,7 @@ After the first `apply`, set the GitHub App webhook URL to `terraform output -ra
 ```bash
 terraform apply                                  # about 3 minutes, then cloud-init needs 3-5 more
 ssh "$(terraform output -raw ssh | cut -d' ' -f2)" cloud-init status --wait
-curl -fsS "https://$(terraform output -raw fqdn)/healthz"
+curl -sS -o /dev/null -w '%{http_code}\n' "https://$(terraform output -raw fqdn)/webhook"   # 405 means mayfly answered (decision 018)
 terraform destroy                                # when done; only the state storage and the vault remain
 ```
 

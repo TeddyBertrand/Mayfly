@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// healthURL returns the /healthz URL for a receiver listening on listenAddr, dialling loopback
+// healthURL returns the /healthz URL for an ops listener on listenAddr, dialling loopback
 // when the host part is empty or a wildcard.
 func healthURL(listenAddr string) (string, error) {
 	host, port, err := net.SplitHostPort(listenAddr)

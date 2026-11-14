@@ -31,7 +31,7 @@ func LoadReaper(getenv func(string) string, readFile func(string) ([]byte, error
 	if err != nil {
 		return ReaperConfig{}, err
 	}
-	cfg := ReaperConfig{App: app, Docker: loadDocker(getenv), HealthURL: "http://127.0.0.1:8080/healthz"}
+	cfg := ReaperConfig{App: app, Docker: loadDocker(getenv), HealthURL: DefaultHealthURL}
 
 	if cfg.WorkerTimeout, err = loadWorkerTimeout(getenv); err != nil {
 		return ReaperConfig{}, err
