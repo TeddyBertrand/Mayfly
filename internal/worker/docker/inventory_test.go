@@ -8,9 +8,11 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/TeddyBertrand/Mayfly/internal/worker"
 )
 
-// TestInventoryList checks the label filter sent to the daemon and that labels are parsed back into a Worker.
+// TestInventoryList checks the label filter sent to the daemon and that labels are parsed back into a worker.Info.
 func TestInventoryList(t *testing.T) {
 	var gotFilters string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +37,7 @@ func TestInventoryList(t *testing.T) {
 	if err := json.Unmarshal([]byte(gotFilters), &filters); err != nil || !reflect.DeepEqual(filters["label"], []string{LabelJobID}) {
 		t.Errorf("filters = %q", gotFilters)
 	}
-	want := []Worker{
+	want := []worker.Info{
 		{ID: "c1", Created: time.Unix(1700000000, 0), JobID: 42, RunnerName: "mayfly-42-ab", Owner: "inst-a", Repo: "octo/demo", InstallationID: 9, RunnerID: 77},
 		{ID: "c2", Created: time.Unix(1700000100, 0), JobID: 43},
 	}

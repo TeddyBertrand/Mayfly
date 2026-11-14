@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
-	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
+	"github.com/TeddyBertrand/Mayfly/internal/worker"
 	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
@@ -28,12 +28,6 @@ const (
 	ReasonMayflyUnreachable = "mayfly unreachable"
 	ReasonNotPickedUp       = "not picked up: mayfly is up but no runner took the job, check its logs for this job"
 )
-
-// Workers lists and removes worker containers.
-type Workers interface {
-	List(ctx context.Context) ([]docker.Worker, error)
-	Remove(ctx context.Context, id string) error
-}
 
 // GitHub is what the reaper reads and deletes on GitHub.
 type GitHub interface {
@@ -66,7 +60,7 @@ type Options struct {
 
 // Removal is one worker the reaper removed and why.
 type Removal struct {
-	Worker docker.Worker
+	Worker worker.Info
 	Reason string
 }
 
@@ -87,7 +81,7 @@ type Report struct {
 // Reaper removes orphaned workers and stale registrations, and reports stuck jobs.
 // It only acts on positive evidence: when unsure, it waits for the next cycle.
 type Reaper struct {
-	workers Workers
+	workers worker.Inventory
 	gh      GitHub
 	owner   Owner
 	opts    Options
@@ -101,7 +95,7 @@ type Reaper struct {
 }
 
 // New returns a Reaper over workers, checking GitHub through gh and the live owner through owner.
-func New(workers Workers, gh GitHub, owner Owner, opts Options, logger *slog.Logger) *Reaper {
+func New(workers worker.Inventory, gh GitHub, owner Owner, opts Options, logger *slog.Logger) *Reaper {
 	return &Reaper{
 		workers: workers, gh: gh, owner: owner, opts: opts, logger: logger, now: time.Now,
 		staleSince: map[int64]time.Time{}, reported: map[int64]bool{},
@@ -257,7 +251,7 @@ func (r *Reaper) sweepStuck(ctx context.Context, repos []github.Repo, ownerErr e
 }
 
 // reason returns why w should be removed, or "" to keep it. live and ownerErr are this cycle's owner probe.
-func (r *Reaper) reason(ctx context.Context, w docker.Worker, live string, ownerErr error) string {
+func (r *Reaper) reason(ctx context.Context, w worker.Info, live string, ownerErr error) string {
 	age := r.now().Sub(w.Created)
 	switch {
 	case age > r.opts.MaxAge:

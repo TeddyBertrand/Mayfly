@@ -7,33 +7,24 @@ import (
 	"net/url"
 	"strconv"
 	"time"
-)
 
-// Worker is a Mayfly container as the reaper sees it, read back from its labels.
-// Numeric fields are zero when a label is missing, for example on containers from an older version.
-type Worker struct {
-	ID             string
-	Created        time.Time
-	JobID          int64
-	RunnerName     string
-	Owner          string
-	Repo           string
-	InstallationID int64
-	RunnerID       int64
-}
+	"github.com/TeddyBertrand/Mayfly/internal/worker"
+)
 
 // Inventory lists and removes worker containers, independently of the Backend that started them.
 type Inventory struct {
 	eng *engine
 }
 
+var _ worker.Inventory = (*Inventory)(nil)
+
 // NewInventory returns an Inventory using the daemon on socket.
 func NewInventory(socket string) *Inventory {
 	return &Inventory{eng: newSocketEngine(socket)}
 }
 
-// List returns every container carrying the mayfly.job_id label, running or not.
-func (i *Inventory) List(ctx context.Context) ([]Worker, error) {
+// List returns every container carrying the mayfly.job_id label, running or not, read back from its labels.
+func (i *Inventory) List(ctx context.Context) ([]worker.Info, error) {
 	filters, _ := json.Marshal(map[string][]string{"label": {LabelJobID}})
 	path := "/containers/json?all=true&filters=" + url.QueryEscape(string(filters))
 	var out []struct {
@@ -44,9 +35,9 @@ func (i *Inventory) List(ctx context.Context) ([]Worker, error) {
 	if err := i.eng.call(ctx, "list", http.MethodGet, path, nil, &out, http.StatusOK); err != nil {
 		return nil, err
 	}
-	workers := make([]Worker, 0, len(out))
+	workers := make([]worker.Info, 0, len(out))
 	for _, c := range out {
-		workers = append(workers, Worker{
+		workers = append(workers, worker.Info{
 			ID:             c.ID,
 			Created:        time.Unix(c.Created, 0),
 			JobID:          parseLabelInt(c.Labels[LabelJobID]),
