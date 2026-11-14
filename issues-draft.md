@@ -179,6 +179,12 @@ Go visibility is per package and a package is a directory, so unit tests stay ne
 - [ ] Decision recorded in `docs/design-decisions.md`
 - [ ] Convention documented in the Go conventions doc, including the build tag and how to run e2e tests
 
+### **done** [docs] Link PRs to their milestone and issue (#98)
+Every PR should carry the milestone of the issue it implements and show under that issue's "Development". Closing keywords only fill "Development" for PRs into the default branch (`main`), and GitHub has no API to link an existing PR, so PRs into `dev` stay unlinked. Checked on #99: a branch from `gh issue develop` is listed under "Development" but is not promoted to a PR link, and the sidebar does not offer PRs into `dev` either. So create each branch from its issue with `gh issue develop` so the issue lists the branch, set the milestone when opening the PR, and let the PR point to the issue through `Closes #<number>`. `dev` stays a non-default branch so the repo's front page shows the released `main`. Document all of it in `CLAUDE.md` sections 6 and 7.
+- [x] `CLAUDE.md` section 6 creates branches with `gh issue develop`
+- [x] `CLAUDE.md` section 7 requires the milestone, explains what "Development" shows, and lists the checks to run after opening
+- [x] The PR for this issue shows the milestone, and the issue lists its branch under "Development"
+
 ## M3 - Observability and baseline
 
 ### [observability] Prometheus metrics in the receiver, provisioner and reaper
