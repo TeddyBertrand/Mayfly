@@ -2,6 +2,14 @@ data "azurerm_client_config" "current" {}
 
 locals {
   dns_label = var.dns_label != "" ? var.dns_label : "${var.name}-${substr(sha1(data.azurerm_client_config.current.subscription_id), 0, 8)}"
+  # Same derivation as KEY_VAULT in infra/bootstrap/bootstrap.sh.
+  key_vault_name = var.key_vault_name != "" ? var.key_vault_name : "mayfly-kv-${substr(replace(data.azurerm_client_config.current.subscription_id, "-", ""), 0, 12)}"
+}
+
+# Created by bootstrap.sh, outside this state, so destroy never deletes the secrets (decision 017).
+data "azurerm_key_vault" "secrets" {
+  name                = local.key_vault_name
+  resource_group_name = var.key_vault_resource_group
 }
 
 resource "azurerm_resource_group" "main" {
@@ -97,8 +105,22 @@ resource "azurerm_linux_virtual_machine" "host" {
   custom_data = base64encode(templatefile("${path.module}/cloud-init.yaml", {
     vnet_cidr      = var.vnet_cidr
     admin_username = var.admin_username
+    compose_yaml   = file("${path.module}/../../compose.yaml")
+    key_vault_uri  = data.azurerm_key_vault.secrets.vault_uri
+    domain         = azurerm_public_ip.host.fqdn
+    env = {
+      MAYFLY_VERSION       = var.mayfly_version
+      MAYFLY_APP_ID        = var.app_id
+      MAYFLY_RUNNER_LABELS = var.runner_labels
+      MAYFLY_WORKERS       = var.workers
+    }
   }))
   tags = var.tags
+
+  # Lets cloud-init read the secrets from Key Vault with no stored credential.
+  identity {
+    type = "SystemAssigned"
+  }
 
   admin_ssh_key {
     username   = var.admin_username
@@ -120,4 +142,11 @@ resource "azurerm_linux_virtual_machine" "host" {
 
   # Managed boot diagnostics give a serial console to debug cloud-init without SSH.
   boot_diagnostics {}
+}
+
+resource "azurerm_role_assignment" "host_secrets" {
+  scope                = data.azurerm_key_vault.secrets.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_linux_virtual_machine.host.identity[0].principal_id
+  principal_type       = "ServicePrincipal"
 }
