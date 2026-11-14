@@ -26,8 +26,9 @@ Ask first, and wait for an answer, before:
 
 Small, reversible, in-scope edits do not need confirmation.
 
-## 3. Code comments
+## 3. Code comments and conventions
 
+- **Follow [docs/go-conventions.md](docs/go-conventions.md)**: no magic values, and log keys from `internal/logkey`.
 - **Every function gets a doc comment** (docstring) stating what it does. Follow the Go convention: it starts with the function name, e.g. `// VerifySignature reports whether the body matches the X-Hub-Signature-256 header.` Keep it to 1-3 lines. Add a line on parameters, return values or errors only when they are not obvious. This applies to unexported functions too.
 - **Inline comments inside function bodies**: default to none. Add one only when the code cannot say it by itself (a non-obvious why, a gotcha, a security-relevant choice), in one short line.
 - Explanations belong in chat, not in the code. No large comment blocks, no banner or separator lines (`////`, `// ----`), no comments that restate what the code does line by line.
