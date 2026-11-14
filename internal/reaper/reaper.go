@@ -12,8 +12,9 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
-	"github.com/TeddyBertrand/Mayfly/internal/receiver"
-	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
+	"github.com/TeddyBertrand/Mayfly/internal/logkey"
+	"github.com/TeddyBertrand/Mayfly/internal/worker"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // Reasons a worker is removed, as logged and returned by Sweep.
@@ -28,12 +29,6 @@ const (
 	ReasonMayflyUnreachable = "mayfly unreachable"
 	ReasonNotPickedUp       = "not picked up: mayfly is up but no runner took the job, check its logs for this job"
 )
-
-// Workers lists and removes worker containers.
-type Workers interface {
-	List(ctx context.Context) ([]docker.Worker, error)
-	Remove(ctx context.Context, id string) error
-}
 
 // GitHub is what the reaper reads and deletes on GitHub.
 type GitHub interface {
@@ -66,7 +61,7 @@ type Options struct {
 
 // Removal is one worker the reaper removed and why.
 type Removal struct {
-	Worker docker.Worker
+	Worker worker.Info
 	Reason string
 }
 
@@ -87,7 +82,7 @@ type Report struct {
 // Reaper removes orphaned workers and stale registrations, and reports stuck jobs.
 // It only acts on positive evidence: when unsure, it waits for the next cycle.
 type Reaper struct {
-	workers Workers
+	workers worker.Inventory
 	gh      GitHub
 	owner   Owner
 	opts    Options
@@ -101,7 +96,7 @@ type Reaper struct {
 }
 
 // New returns a Reaper over workers, checking GitHub through gh and the live owner through owner.
-func New(workers Workers, gh GitHub, owner Owner, opts Options, logger *slog.Logger) *Reaper {
+func New(workers worker.Inventory, gh GitHub, owner Owner, opts Options, logger *slog.Logger) *Reaper {
 	return &Reaper{
 		workers: workers, gh: gh, owner: owner, opts: opts, logger: logger, now: time.Now,
 		staleSince: map[int64]time.Time{}, reported: map[int64]bool{},
@@ -114,7 +109,7 @@ func (r *Reaper) Run(ctx context.Context, interval time.Duration) {
 	defer t.Stop()
 	for {
 		if _, err := r.Sweep(ctx); err != nil && ctx.Err() == nil {
-			r.logger.Error("reaper sweep failed", "err", err)
+			r.logger.Error("reaper sweep failed", logkey.Err, err)
 		}
 		select {
 		case <-ctx.Done():
@@ -135,7 +130,7 @@ func (r *Reaper) Sweep(ctx context.Context) (Report, error) {
 	live, ownerErr := r.owner(ctx)
 	if ownerErr != nil {
 		r.missed++
-		r.logger.Warn("owner did not answer", "err", ownerErr, "missed", r.missed, "limit", r.opts.MissedProbes)
+		r.logger.Warn("owner did not answer", logkey.Err, ownerErr, logkey.Missed, r.missed, logkey.Limit, r.opts.MissedProbes)
 	} else {
 		r.missed = 0
 	}
@@ -148,19 +143,19 @@ func (r *Reaper) Sweep(ctx context.Context) (Report, error) {
 			claimed[w.RunnerID] = true
 			continue
 		}
-		log := r.logger.With("container_id", shortID(w.ID), "job_id", w.JobID, "runner_name", w.RunnerName, "reason", reason)
+		log := r.logger.With(logkey.ContainerID, worker.ShortID(w.ID), logkey.JobID, w.JobID, logkey.RunnerName, w.RunnerName, logkey.Reason, reason)
 		if err := r.workers.Remove(ctx, w.ID); err != nil {
-			log.Error("worker remove failed", "err", err)
+			log.Error("worker remove failed", logkey.Err, err)
 			claimed[w.RunnerID] = true
 			continue
 		}
-		log.Info("orphaned worker removed", "age", r.now().Sub(w.Created).Round(time.Second).String())
+		log.Info("orphaned worker removed", logkey.Age, r.now().Sub(w.Created).Round(time.Second).String())
 		rep.Removed = append(rep.Removed, Removal{Worker: w, Reason: reason})
 	}
 
 	repos, err := r.gh.Repos(ctx)
 	if err != nil {
-		r.logger.Warn("github repos unavailable, registrations and stuck jobs skipped", "err", err)
+		r.logger.Warn("github repos unavailable, registrations and stuck jobs skipped", logkey.Err, err)
 		return rep, nil
 	}
 	rep.Deregistered = r.sweepRegistrations(ctx, repos, claimed)
@@ -176,7 +171,7 @@ func (r *Reaper) sweepRegistrations(ctx context.Context, repos []github.Repo, cl
 	for _, repo := range repos {
 		regs, err := r.gh.Runners(ctx, repo.InstallationID, repo.FullName)
 		if err != nil {
-			r.logger.Warn("runner list failed, registrations kept", "repo", repo.FullName, "err", err)
+			r.logger.Warn("runner list failed, registrations kept", logkey.Repo, repo.FullName, logkey.Err, err)
 			// Keep this repo's timers: a failed list says nothing about whether its runners recovered.
 			for id := range r.staleSince {
 				seen[id] = true
@@ -185,7 +180,7 @@ func (r *Reaper) sweepRegistrations(ctx context.Context, repos []github.Repo, cl
 		}
 		for _, reg := range regs {
 			// Only names the provisioner generates; other self-hosted runners on the repo are never touched.
-			if !strings.HasPrefix(reg.Name, "mayfly-") || reg.Status != "offline" || claimed[reg.ID] {
+			if !strings.HasPrefix(reg.Name, github.RunnerNamePrefix) || reg.Status != github.RunnerStatusOffline || claimed[reg.ID] {
 				continue
 			}
 			seen[reg.ID] = true
@@ -197,12 +192,12 @@ func (r *Reaper) sweepRegistrations(ctx context.Context, repos []github.Repo, cl
 			if r.now().Sub(since) < r.opts.StaleAfter {
 				continue
 			}
-			log := r.logger.With("repo", repo.FullName, "runner_id", reg.ID, "runner_name", reg.Name)
+			log := r.logger.With(logkey.Repo, repo.FullName, logkey.RunnerID, reg.ID, logkey.RunnerName, reg.Name)
 			if err := r.gh.DeleteRunner(ctx, repo.InstallationID, repo.FullName, reg.ID); err != nil {
-				log.Error("stale registration delete failed", "err", err)
+				log.Error("stale registration delete failed", logkey.Err, err)
 				continue
 			}
-			log.Info("stale registration removed", "stale_for", r.now().Sub(since).Round(time.Second).String())
+			log.Info("stale registration removed", logkey.StaleFor, r.now().Sub(since).Round(time.Second).String())
 			delete(r.staleSince, reg.ID)
 			deleted = append(deleted, reg)
 		}
@@ -223,14 +218,14 @@ func (r *Reaper) sweepStuck(ctx context.Context, repos []github.Repo, ownerErr e
 	for _, repo := range repos {
 		jobs, err := r.gh.QueuedJobs(ctx, repo.InstallationID, repo.FullName)
 		if err != nil {
-			r.logger.Warn("queued job list failed", "repo", repo.FullName, "err", err)
+			r.logger.Warn("queued job list failed", logkey.Repo, repo.FullName, logkey.Err, err)
 			for id := range r.reported {
 				queued[id] = true
 			}
 			continue
 		}
 		for _, j := range jobs {
-			if !(receiver.Job{Labels: j.Labels}).MatchesLabels(r.opts.Labels) {
+			if !workflow.MatchesLabels(j.Labels, r.opts.Labels) {
 				continue
 			}
 			queued[j.ID] = true
@@ -243,8 +238,8 @@ func (r *Reaper) sweepStuck(ctx context.Context, repos []github.Repo, ownerErr e
 				reason = ReasonMayflyUnreachable
 			}
 			r.reported[j.ID] = true
-			r.logger.Warn("job stuck in queued", "repo", repo.FullName, "job_id", j.ID, "job_name", j.Name,
-				"age", age.Round(time.Second).String(), "reason", reason, "url", j.URL)
+			r.logger.Warn("job stuck in queued", logkey.Repo, repo.FullName, logkey.JobID, j.ID, logkey.JobName, j.Name,
+				logkey.Age, age.Round(time.Second).String(), logkey.Reason, reason, logkey.URL, j.URL)
 			stuck = append(stuck, Stuck{Repo: repo.FullName, Job: j, Reason: reason})
 		}
 	}
@@ -257,7 +252,7 @@ func (r *Reaper) sweepStuck(ctx context.Context, repos []github.Repo, ownerErr e
 }
 
 // reason returns why w should be removed, or "" to keep it. live and ownerErr are this cycle's owner probe.
-func (r *Reaper) reason(ctx context.Context, w docker.Worker, live string, ownerErr error) string {
+func (r *Reaper) reason(ctx context.Context, w worker.Info, live string, ownerErr error) string {
 	age := r.now().Sub(w.Created)
 	switch {
 	case age > r.opts.MaxAge:
@@ -273,11 +268,11 @@ func (r *Reaper) reason(ctx context.Context, w docker.Worker, live string, owner
 	runner, err := r.gh.Runner(ctx, w.InstallationID, w.Repo, w.RunnerID)
 	switch {
 	case err != nil:
-		r.logger.Warn("runner lookup failed, worker kept", "container_id", shortID(w.ID), "err", err)
+		r.logger.Warn("runner lookup failed, worker kept", logkey.ContainerID, worker.ShortID(w.ID), logkey.Err, err)
 		return ""
 	case !runner.Found:
 		return ReasonRunnerGone
-	case runner.Status == "offline":
+	case runner.Status == github.RunnerStatusOffline:
 		return ReasonRunnerOffline
 	}
 	return ""
@@ -309,12 +304,4 @@ func HealthOwner(client *http.Client, url string) Owner {
 		}
 		return h.Instance, nil
 	}
-}
-
-// shortID returns the 12-character form Docker shows for container IDs.
-func shortID(id string) string {
-	if len(id) > 12 {
-		return id[:12]
-	}
-	return id
 }

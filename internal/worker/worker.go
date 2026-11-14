@@ -5,7 +5,21 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
+
+	"github.com/TeddyBertrand/Mayfly/internal/logkey"
 )
+
+// shortIDLen is the length of the short form Docker shows for container IDs.
+const shortIDLen = 12
+
+// ShortID returns the first shortIDLen characters of a worker ID, the form Docker shows; shorter IDs are returned as is.
+func ShortID(id string) string {
+	if len(id) > shortIDLen {
+		return id[:shortIDLen]
+	}
+	return id
+}
 
 // Spec describes one ephemeral worker. JITConfig is a credential and must not be logged.
 type Spec struct {
@@ -20,7 +34,7 @@ type Spec struct {
 
 // LogValue hides the JIT config so a Spec can be logged safely.
 func (s Spec) LogValue() slog.Value {
-	return slog.GroupValue(slog.Int64("job_id", s.JobID), slog.String("runner_name", s.RunnerName))
+	return slog.GroupValue(slog.Int64(logkey.JobID, s.JobID), slog.String(logkey.RunnerName, s.RunnerName))
 }
 
 // String hides the JIT config so a Spec cannot leak through fmt.
@@ -32,4 +46,25 @@ func (s Spec) String() string {
 // Run must leave nothing behind, whether it returns an error or not.
 type Backend interface {
 	Run(ctx context.Context, spec Spec) error
+}
+
+// Info is a worker found on the host, as the reaper sees it.
+// Numeric fields are zero when the backend has no value for them, for example on workers from an older version.
+type Info struct {
+	// ID is the backend's own ID for the worker, such as a container ID.
+	ID             string
+	Created        time.Time
+	JobID          int64
+	RunnerName     string
+	Owner          string
+	Repo           string
+	InstallationID int64
+	RunnerID       int64
+}
+
+// Inventory lists and removes the workers present on the host, independently of the Backend that started them.
+type Inventory interface {
+	List(ctx context.Context) ([]Info, error)
+	// Remove destroys worker id, stopping it if it runs. A worker already gone is not an error.
+	Remove(ctx context.Context, id string) error
 }

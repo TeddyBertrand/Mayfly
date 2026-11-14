@@ -21,6 +21,10 @@ const (
 	jwtBackdate = 60 * time.Second
 	// jwtLifetime stays under GitHub's 10-minute maximum.
 	jwtLifetime = 9 * time.Minute
+	// jwtHeader is the fixed JOSE header of an RS256 JWT, the only kind GitHub Apps use.
+	jwtHeader = `{"alg":"RS256","typ":"JWT"}`
+	// jwtSeparator joins the header, claims and signature of a compact JWT.
+	jwtSeparator = "."
 )
 
 // ParsePrivateKey decodes a PEM RSA private key in PKCS#1 (GitHub's format) or PKCS#8 form.
@@ -46,7 +50,6 @@ func ParsePrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
 
 // appJWT returns an RS256 JWT identifying appID, signed with key and valid from now.
 func appJWT(appID int64, key *rsa.PrivateKey, now time.Time) (string, error) {
-	header := `{"alg":"RS256","typ":"JWT"}`
 	claims, err := json.Marshal(struct {
 		IssuedAt  int64  `json:"iat"`
 		ExpiresAt int64  `json:"exp"`
@@ -61,11 +64,11 @@ func appJWT(appID int64, key *rsa.PrivateKey, now time.Time) (string, error) {
 	}
 
 	enc := base64.RawURLEncoding
-	signingInput := enc.EncodeToString([]byte(header)) + "." + enc.EncodeToString(claims)
+	signingInput := enc.EncodeToString([]byte(jwtHeader)) + jwtSeparator + enc.EncodeToString(claims)
 	digest := sha256.Sum256([]byte(signingInput))
 	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, digest[:])
 	if err != nil {
 		return "", fmt.Errorf("jwt sign: %w", err)
 	}
-	return signingInput + "." + enc.EncodeToString(sig), nil
+	return signingInput + jwtSeparator + enc.EncodeToString(sig), nil
 }

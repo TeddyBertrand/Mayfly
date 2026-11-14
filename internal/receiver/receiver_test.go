@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/config"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // discardLogger returns a logger that drops all output.
@@ -22,16 +23,18 @@ func discardLogger() *slog.Logger {
 }
 
 // testWebhook returns a Webhook with the "mayfly" label, a fresh deduper, and onQueued (or a no-op).
-func testWebhook(secret []byte, onQueued func(Job)) Webhook {
+func testWebhook(secret []byte, onQueued func(workflow.Job)) Webhook {
 	if onQueued == nil {
-		onQueued = func(Job) {}
+		onQueued = func(workflow.Job) {}
 	}
 	return Webhook{
-		Secret:   secret,
-		Labels:   []string{"mayfly"},
-		Dedupe:   NewMemoryDeduper(time.Hour),
-		OnQueued: func(j Job) error { onQueued(j); return nil },
-		OnUpdate: func(string, Job) {},
+		Secret: secret,
+		Labels: []string{"mayfly"},
+		Dedupe: NewMemoryDeduper(time.Hour),
+		Handoff: Handoff{
+			OnQueued: func(j workflow.Job) error { onQueued(j); return nil },
+			OnUpdate: func(workflow.Action, workflow.Job) {},
+		},
 	}
 }
 
@@ -41,7 +44,7 @@ func TestWebhookHandoffFailure(t *testing.T) {
 	wh := testWebhook(secret, nil)
 	fail := true
 	accepted := 0
-	wh.OnQueued = func(Job) error {
+	wh.OnQueued = func(workflow.Job) error {
 		if fail {
 			return errors.New("queue full")
 		}
@@ -108,10 +111,10 @@ func TestWebhookDispatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var jobs []Job
+			var jobs []workflow.Job
 			updates := 0
-			wh := testWebhook(secret, func(j Job) { jobs = append(jobs, j) })
-			wh.OnUpdate = func(string, Job) { updates++ }
+			wh := testWebhook(secret, func(j workflow.Job) { jobs = append(jobs, j) })
+			wh.OnUpdate = func(workflow.Action, workflow.Job) { updates++ }
 			h := NewHandler(discardLogger(), wh)
 			if got := postSigned(h, secret, tt.event, tt.delivery, tt.body); got != tt.wantStatus {
 				t.Errorf("status = %d, want %d", got, tt.wantStatus)
@@ -129,8 +132,8 @@ func TestWebhookDispatch(t *testing.T) {
 // TestWebhookSameDeliveryTwice checks that a redelivered queued job is handed off once.
 func TestWebhookSameDeliveryTwice(t *testing.T) {
 	secret := []byte("test-secret")
-	var jobs []Job
-	h := NewHandler(discardLogger(), testWebhook(secret, func(j Job) { jobs = append(jobs, j) }))
+	var jobs []workflow.Job
+	h := NewHandler(discardLogger(), testWebhook(secret, func(j workflow.Job) { jobs = append(jobs, j) }))
 
 	for i := range 2 {
 		if got := postSigned(h, secret, "workflow_job", "same-delivery", queuedPayload); got != http.StatusAccepted {
@@ -153,7 +156,7 @@ func TestHandlerRoutes(t *testing.T) {
 		path   string
 		want   int
 	}{
-		{"healthz ok", http.MethodGet, "/healthz", http.StatusOK},
+		{"no healthz on the webhook listener", http.MethodGet, "/healthz", http.StatusNotFound},
 		{"webhook unsigned", http.MethodPost, "/webhook", http.StatusUnauthorized},
 		{"webhook wrong method", http.MethodGet, "/webhook", http.StatusMethodNotAllowed},
 		{"unknown path", http.MethodGet, "/nope", http.StatusNotFound},
@@ -206,38 +209,23 @@ func TestWebhookSignatureAndLimit(t *testing.T) {
 	}
 }
 
-// TestServeShutsDownOnCancel starts a real server, probes /healthz, then cancels and expects a clean return.
-func TestServeShutsDownOnCancel(t *testing.T) {
+// TestRunFailsWhenPortTaken checks that Run returns an error at once when its address is already in use.
+func TestRunFailsWhenPortTaken(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.ReceiverConfig{ShutdownTimeout: 2 * time.Second}
+	defer func() { _ = ln.Close() }()
+	cfg := config.ReceiverConfig{ListenAddr: ln.Addr().String(), ShutdownTimeout: time.Second}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() {
-		done <- serve(ctx, ln, cfg, discardLogger(), Handoff{OnQueued: func(Job) error { return nil }, OnUpdate: func(string, Job) {}})
-	}()
-
-	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := resp.Body.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("healthz status = %d", resp.StatusCode)
-	}
-
-	cancel()
+	go func() { done <- Run(context.Background(), cfg, discardLogger(), testWebhook(nil, nil).Handoff) }()
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatalf("serve returned %v, want nil", err)
+		if err == nil {
+			t.Fatal("Run returned nil on a taken port")
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("serve did not return after cancel")
+		t.Fatal("Run did not return on a taken port")
 	}
 }

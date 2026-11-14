@@ -4,17 +4,20 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+)
 
-	"github.com/TeddyBertrand/Mayfly/internal/github"
-	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
+// Provisioner defaults.
+const (
+	// DefaultWorkers is how many jobs are provisioned at once.
+	DefaultWorkers = 2
+	// DefaultQueueSize is how many jobs may wait before the receiver answers 503.
+	DefaultQueueSize = 100
 )
 
 // ProvisionerConfig holds the settings of the provisioner component.
 type ProvisionerConfig struct {
-	AppID         int64
-	AppKey        []byte
-	GitHubAPIURL  string
-	DockerSocket  string
+	App           GitHubApp
+	Docker        Docker
 	WorkerImage   string
 	WorkerNetwork string
 	WorkerTimeout time.Duration
@@ -23,45 +26,25 @@ type ProvisionerConfig struct {
 }
 
 // LoadProvisioner reads the provisioner settings through getenv and readFile, applying defaults
-// and returning an error on missing or invalid values. AppKey is PEM bytes and must not be logged.
+// and returning an error on missing or invalid values.
 func LoadProvisioner(getenv func(string) string, readFile func(string) ([]byte, error)) (ProvisionerConfig, error) {
-	cfg := ProvisionerConfig{
-		GitHubAPIURL: github.DefaultBaseURL,
-		DockerSocket: docker.DefaultSocket,
-		WorkerImage:  docker.DefaultImage,
-	}
-
-	v := getenv("MAYFLY_APP_ID")
-	if v == "" {
-		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_APP_ID: required")
-	}
-	id, err := strconv.ParseInt(v, 10, 64)
-	if err != nil || id <= 0 {
-		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_APP_ID: must be a positive integer, got %q", v)
-	}
-	cfg.AppID = id
-
-	if cfg.AppKey, err = loadSecretFile(getenv, readFile, "MAYFLY_APP_KEY_FILE"); err != nil {
+	app, err := LoadGitHubApp(getenv, readFile)
+	if err != nil {
 		return ProvisionerConfig{}, err
 	}
+	cfg := ProvisionerConfig{App: app, Docker: loadDocker(getenv), WorkerImage: DefaultWorkerImage}
 
-	if v := getenv("MAYFLY_GITHUB_API_URL"); v != "" {
-		cfg.GitHubAPIURL = v
-	}
-	if v := getenv("MAYFLY_DOCKER_SOCKET"); v != "" {
-		cfg.DockerSocket = v
-	}
 	if v := getenv("MAYFLY_WORKER_IMAGE"); v != "" {
 		cfg.WorkerImage = v
 	}
 	cfg.WorkerNetwork = getenv("MAYFLY_WORKER_NETWORK")
-	if cfg.WorkerTimeout, err = parseDuration(getenv, "MAYFLY_WORKER_TIMEOUT", docker.DefaultTimeout); err != nil {
+	if cfg.WorkerTimeout, err = loadWorkerTimeout(getenv); err != nil {
 		return ProvisionerConfig{}, err
 	}
-	if cfg.Workers, err = parsePositiveInt(getenv, "MAYFLY_WORKERS", 2); err != nil {
+	if cfg.Workers, err = parsePositiveInt(getenv, "MAYFLY_WORKERS", DefaultWorkers); err != nil {
 		return ProvisionerConfig{}, err
 	}
-	if cfg.QueueSize, err = parsePositiveInt(getenv, "MAYFLY_QUEUE_SIZE", 100); err != nil {
+	if cfg.QueueSize, err = parsePositiveInt(getenv, "MAYFLY_QUEUE_SIZE", DefaultQueueSize); err != nil {
 		return ProvisionerConfig{}, err
 	}
 	return cfg, nil

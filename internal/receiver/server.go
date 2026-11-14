@@ -1,74 +1,67 @@
 package receiver
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
-	"time"
+
+	"github.com/TeddyBertrand/Mayfly/internal/logkey"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // maxWebhookBody caps webhook bodies; workflow_job payloads are tens of KB.
 const maxWebhookBody = 1 << 20
+
+// Headers GitHub sets on every webhook delivery.
+const (
+	headerDelivery  = "X-GitHub-Delivery"
+	headerEvent     = "X-GitHub-Event"
+	headerSignature = "X-Hub-Signature-256"
+)
+
+// Webhook events the receiver acts on; GitHub sends others, which are acknowledged and ignored.
+const (
+	eventPing        = "ping"
+	eventWorkflowJob = "workflow_job"
+)
 
 // Webhook holds what the /webhook route needs to accept and hand off jobs.
 type Webhook struct {
 	Secret []byte
 	Labels []string
 	Dedupe Deduper
-	// OnQueued hands a job off without blocking; an error means it was not accepted.
-	OnQueued func(Job) error
-	// OnUpdate passes an in_progress or completed job on without blocking.
-	OnUpdate func(action string, job Job)
-	// Instance is reported on /healthz.
-	Instance string
+	Handoff
 }
 
-// Health is the /healthz response body.
-type Health struct {
-	Status   string `json:"status"`
-	Instance string `json:"instance"`
-}
-
-// NewHandler returns the receiver routes: GET /healthz and POST /webhook.
+// NewHandler returns the receiver's only route, POST /webhook. Ops endpoints live on their own listener (decision 018).
 func NewHandler(logger *slog.Logger, wh Webhook) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealthz(wh.Instance))
 	mux.HandleFunc("POST /webhook", handleWebhook(logger, wh))
 	return mux
-}
-
-// handleHealthz reports that the process is up and which instance it is; it must not depend on external services.
-func handleHealthz(instance string) http.HandlerFunc {
-	body, _ := json.Marshal(Health{Status: "ok", Instance: instance})
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
-	}
 }
 
 // handleWebhook reads the body under a size limit, rejects it unless signed, then dispatches it.
 func handleWebhook(logger *slog.Logger, wh Webhook) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		delivery := r.Header.Get("X-GitHub-Delivery")
-		event := r.Header.Get("X-GitHub-Event")
-		log := logger.With("delivery_id", delivery, "event", event)
+		delivery := r.Header.Get(headerDelivery)
+		event := r.Header.Get(headerEvent)
+		log := logger.With(logkey.DeliveryID, delivery, logkey.Event, event)
 
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBody))
 		if err != nil {
 			var tooBig *http.MaxBytesError
 			if errors.As(err, &tooBig) {
-				log.Warn("webhook body too large", "limit", maxWebhookBody)
+				log.Warn("webhook body too large", logkey.Limit, maxWebhookBody)
 				http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
 				return
 			}
-			log.Warn("webhook body read failed", "err", err)
+			log.Warn("webhook body read failed", logkey.Err, err)
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 
-		if !VerifySignature(wh.Secret, body, r.Header.Get("X-Hub-Signature-256")) {
+		if !VerifySignature(wh.Secret, body, r.Header.Get(headerSignature)) {
 			log.Warn("webhook signature rejected")
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return
@@ -83,10 +76,10 @@ func handleWebhook(logger *slog.Logger, wh Webhook) http.HandlerFunc {
 // Ignored events still get 2xx so GitHub does not mark the delivery as failed.
 func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte) int {
 	switch event {
-	case "ping":
+	case eventPing:
 		log.Info("ping received")
 		return http.StatusOK
-	case "workflow_job":
+	case eventWorkflowJob:
 	default:
 		log.Info("event ignored")
 		return http.StatusAccepted
@@ -99,19 +92,19 @@ func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte)
 
 	action, job, err := parseWorkflowJob(body)
 	if err != nil {
-		log.Warn("workflow_job rejected", "err", err)
+		log.Warn("workflow_job rejected", logkey.Err, err)
 		return http.StatusBadRequest
 	}
-	log = log.With("action", action, "job_id", job.ID, "repo", job.Repo)
+	log = log.With(logkey.Action, action, logkey.JobID, job.ID, logkey.Repo, job.Repo)
 
 	switch action {
-	case "queued", "in_progress", "completed":
+	case workflow.ActionQueued, workflow.ActionInProgress, workflow.ActionCompleted:
 	default:
 		log.Info("workflow_job action ignored")
 		return http.StatusAccepted
 	}
-	if !job.MatchesLabels(wh.Labels) {
-		log.Info("workflow_job not for mayfly", "labels", job.Labels)
+	if !workflow.MatchesLabels(job.Labels, wh.Labels) {
+		log.Info("workflow_job not for mayfly", logkey.Labels, job.Labels)
 		return http.StatusAccepted
 	}
 	if wh.Dedupe.Seen(delivery) {
@@ -119,28 +112,17 @@ func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte)
 		return http.StatusAccepted
 	}
 
-	if action != "queued" {
+	if action != workflow.ActionQueued {
 		wh.OnUpdate(action, job)
-		log.Info("workflow_job update handed off", "runner_name", job.RunnerName, "conclusion", job.Conclusion)
+		log.Info("workflow_job update handed off", logkey.RunnerName, job.RunnerName, logkey.Conclusion, job.Conclusion)
 		return http.StatusAccepted
 	}
 	if err := wh.OnQueued(job); err != nil {
 		// Un-mark the delivery so GitHub's redelivery is not dropped as a duplicate.
 		wh.Dedupe.Forget(delivery)
-		log.Error("workflow_job handoff failed", "err", err)
+		log.Error("workflow_job handoff failed", logkey.Err, err)
 		return http.StatusServiceUnavailable
 	}
-	log.Info("workflow_job queued", "labels", job.Labels)
+	log.Info("workflow_job queued", logkey.Labels, job.Labels)
 	return http.StatusAccepted
-}
-
-// newServer wraps handler in an http.Server with explicit timeouts against slow clients.
-func newServer(handler http.Handler) *http.Server {
-	return &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
 }

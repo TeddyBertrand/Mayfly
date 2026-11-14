@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
-	"github.com/TeddyBertrand/Mayfly/internal/receiver"
 	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // fakeJIT records JIT requests and returns a fixed config or error.
@@ -91,10 +91,11 @@ func (s *syncBuffer) String() string {
 	return s.buf.String()
 }
 
-// newTestProvisioner returns a Provisioner over the fakes and a buffer with its JSON logs.
-func newTestProvisioner(jit *fakeJIT, b *fakeBackend, workers, queue int) (*Provisioner, *syncBuffer) {
+// newTestProvisioner returns a Provisioner over the fakes and a buffer with its JSON logs; opts gets the "mayfly" label.
+func newTestProvisioner(jit *fakeJIT, b *fakeBackend, opts Options) (*Provisioner, *syncBuffer) {
 	logs := &syncBuffer{}
-	p := New(jit, b, []string{"mayfly"}, workers, queue, slog.New(slog.NewJSONHandler(logs, nil)))
+	opts.Labels = []string{"mayfly"}
+	p := New(jit, b, opts, slog.New(slog.NewJSONHandler(logs, nil)))
 	p.retry = retry.Policy{Attempts: 3, Base: time.Millisecond, Max: 5 * time.Millisecond}
 	return p, logs
 }
@@ -111,10 +112,10 @@ func waitStarted(t *testing.T, b *fakeBackend, n int) {
 	}
 }
 
-var testJob = receiver.Job{ID: 4242, Repo: "octo/demo", InstallationID: 9}
+var testJob = workflow.Job{ID: 4242, Repo: "octo/demo", InstallationID: 9}
 
 // jobN returns testJob with a distinct ID, since the provisioner tracks one entry per job ID.
-func jobN(i int) receiver.Job {
+func jobN(i int) workflow.Job {
 	j := testJob
 	j.ID = int64(1000 + i)
 	return j
@@ -123,7 +124,7 @@ func jobN(i int) receiver.Job {
 // TestJobRunsOnWorker checks the runner name, labels and spec passed down for one job.
 func TestJobRunsOnWorker(t *testing.T) {
 	jit, b := &fakeJIT{}, newFakeBackend(false)
-	p, logs := newTestProvisioner(jit, b, 1, 10)
+	p, logs := newTestProvisioner(jit, b, Options{Workers: 1, QueueSize: 10})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { p.Run(ctx); close(done) }()
@@ -153,7 +154,7 @@ func TestJobRunsOnWorker(t *testing.T) {
 // TestJITFailureSkipsWorker checks a GitHub error is logged with the job ID and starts no container.
 func TestJITFailureSkipsWorker(t *testing.T) {
 	jit, b := &fakeJIT{err: errors.New("403 forbidden")}, newFakeBackend(false)
-	p, logs := newTestProvisioner(jit, b, 1, 10)
+	p, logs := newTestProvisioner(jit, b, Options{Workers: 1, QueueSize: 10})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { p.Run(ctx); close(done) }()
@@ -176,7 +177,7 @@ func TestJITFailureSkipsWorker(t *testing.T) {
 
 // TestEnqueueFullDoesNotBlock checks Enqueue returns ErrQueueFull at once when every slot is taken.
 func TestEnqueueFullDoesNotBlock(t *testing.T) {
-	p, _ := newTestProvisioner(&fakeJIT{}, newFakeBackend(true), 1, 2)
+	p, _ := newTestProvisioner(&fakeJIT{}, newFakeBackend(true), Options{Workers: 1, QueueSize: 2})
 	for i := range 2 {
 		if err := p.Enqueue(jobN(i)); err != nil {
 			t.Fatalf("enqueue %d: %v", i, err)
@@ -231,24 +232,24 @@ func TestCapUnderBurst(t *testing.T) {
 		finished: make(chan struct{}, burst),
 		release:  make(chan struct{}),
 	}
-	p := New(&fakeJIT{}, b, nil, workers, queueSize, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	p := New(&fakeJIT{}, b, Options{Workers: workers, QueueSize: queueSize}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go p.Run(ctx)
 
 	for i := range workers {
-		if err := p.Enqueue(receiver.Job{ID: int64(i + 1), Repo: "octo/demo"}); err != nil {
+		if err := p.Enqueue(workflow.Job{ID: int64(i + 1), Repo: "octo/demo"}); err != nil {
 			t.Fatalf("enqueue %d: %v", i, err)
 		}
 	}
 	waitFor(t, b.started, workers, "started")
 
 	for i := workers; i < burst; i++ {
-		if err := p.Enqueue(receiver.Job{ID: int64(i + 1), Repo: "octo/demo"}); err != nil {
+		if err := p.Enqueue(workflow.Job{ID: int64(i + 1), Repo: "octo/demo"}); err != nil {
 			t.Fatalf("enqueue %d with workers busy: %v", i, err)
 		}
 	}
-	if err := p.Enqueue(receiver.Job{ID: burst + 1, Repo: "octo/demo"}); !errors.Is(err, ErrQueueFull) {
+	if err := p.Enqueue(workflow.Job{ID: burst + 1, Repo: "octo/demo"}); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("overflow err = %v, want ErrQueueFull", err)
 	}
 
@@ -283,7 +284,7 @@ func waitFor(t *testing.T, ch <-chan struct{}, n int, what string) {
 // TestShutdownStopsWorkersAndDropsQueue checks cancel stops running workers and logs dropped jobs.
 func TestShutdownStopsWorkersAndDropsQueue(t *testing.T) {
 	b := newFakeBackend(true)
-	p, logs := newTestProvisioner(&fakeJIT{}, b, 2, 10)
+	p, logs := newTestProvisioner(&fakeJIT{}, b, Options{Workers: 2, QueueSize: 10})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { p.Run(ctx); close(done) }()

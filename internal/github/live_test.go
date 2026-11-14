@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/TeddyBertrand/Mayfly/internal/config"
 )
 
 // envOr returns the environment value for key, or def when it is unset.
@@ -83,7 +85,7 @@ func TestLiveGenerateJITConfig(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c := NewClient(DefaultBaseURL, appID, key)
+	c := NewClient(config.DefaultGitHubAPIURL, appID, key)
 
 	logInstallationAccess(ctx, t, c, installationID)
 

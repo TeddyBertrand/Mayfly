@@ -45,7 +45,7 @@ After the first `apply`, set the GitHub App webhook URL to `terraform output -ra
 ```bash
 terraform apply                                  # about 3 minutes, then cloud-init needs 3-5 more
 ssh "$(terraform output -raw ssh | cut -d' ' -f2)" cloud-init status --wait
-curl -fsS "https://$(terraform output -raw fqdn)/healthz"
+curl -sS -o /dev/null -w '%{http_code}\n' "https://$(terraform output -raw fqdn)/webhook"   # 405 means mayfly answered (decision 018)
 terraform destroy                                # when done; only the state storage and the vault remain
 ```
 
@@ -53,7 +53,7 @@ Each rebuild has a new SSH host key under the same name, so `ssh` warns that the
 
 `make dev` points the App webhook back at your tunnel; run `go run ./cmd/setwebhook "$(terraform output -raw webhook_url)"` to send it to the host again.
 
-The image is pinned by `mayfly_version` (default `0.2.1`). On the host, the deploy lives in `/opt/mayfly`, runs as `mayfly.service`, and logs with `journalctl -u mayfly` and `docker compose -f /opt/mayfly/compose.yaml logs`.
+The image is pinned by `mayfly_version` (default `0.2.5`). `compose.yaml` comes from your checkout while the image comes from that version, so apply from a checkout that matches it: since 0.2.5 the reaper probes the ops port 8081, which older images do not open (decision 018). On the host, the deploy lives in `/opt/mayfly`, runs as `mayfly.service`, and logs with `journalctl -u mayfly` and `docker compose -f /opt/mayfly/compose.yaml logs`.
 
 For benchmarks, `terraform apply -var vm_size=Standard_B2als_v2` (4 GB). Quotas in `denmarkeast`: 10 vCPU for `Basv2`, 4 for `BS`, 6 in total.
 

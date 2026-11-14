@@ -26,8 +26,9 @@ Ask first, and wait for an answer, before:
 
 Small, reversible, in-scope edits do not need confirmation.
 
-## 3. Code comments
+## 3. Code comments and conventions
 
+- **Follow [docs/go-conventions.md](docs/go-conventions.md)**: no magic values, and log keys from `internal/logkey`.
 - **Every function gets a doc comment** (docstring) stating what it does. Follow the Go convention: it starts with the function name, e.g. `// VerifySignature reports whether the body matches the X-Hub-Signature-256 header.` Keep it to 1-3 lines. Add a line on parameters, return values or errors only when they are not obvious. This applies to unexported functions too.
 - **Inline comments inside function bodies**: default to none. Add one only when the code cannot say it by itself (a non-obvious why, a gotcha, a security-relevant choice), in one short line.
 - Explanations belong in chat, not in the code. No large comment blocks, no banner or separator lines (`////`, `// ----`), no comments that restate what the code does line by line.
@@ -53,6 +54,7 @@ Commit only when the owner asks.
 
 - `main` holds stable, released work. `dev` is the integration branch where all work lands first. Never commit directly to `main` or `dev`.
 - Each piece of work gets its own branch created from `dev`, named `<type>/<feature-name>` in lowercase kebab-case: `feat/`, `fix/`, `ci/`, `docs/`, `refacto/`. Example: `feat/webhook-signature-verification`.
+- Create the branch from its issue with `gh issue develop <number> --base dev --name <branch> --checkout`, so the issue lists the branch under "Development" from the start (see section 7). This creates the branch on GitHub right away.
 - The branch prefix follows the same types as commits. If none fits, ask the owner.
 - When the work is done, open a PR from the branch into `dev`. Merging `dev` into `main` is the owner's call.
 - When an issue is finished, mark it in `issues-draft.md` on the same branch: prefix its heading with `**done**`, append the GitHub issue number (e.g. `### **done** [ci] Add linting and formatting (#2)`), and tick its acceptance boxes (`- [x]`) that are met.
@@ -66,5 +68,7 @@ Every PR is linked to the issue it implements, and merging the PR closes that is
 - **Closing is automatic.** On `main`, GitHub closes the issue natively. On `dev`, the `close-issues` workflow (`.github/workflows/close-issues.yml`) closes it on merge. It only matches `close`/`fix`/`resolve` keywords (`Closes`, `Fixes`, `Resolves`...), never `Refs`. Never close issues by hand, and never merge a PR that is missing the link.
 - **No issue yet?** Create it first (or ask the owner), then link it. Work without an issue does not get a PR.
 - **PRs into `dev` use `Closes #<number>` too.** Use `Refs #<number>` only for a PR that does not finish the issue, since `Refs` never closes anything.
-- **Check after opening.** Confirm the issue shows the PR under "Development". `gh pr view` has no field for this, so query it: `gh api graphql -f query='{repository(owner:"TeddyBertrand",name:"Mayfly"){pullRequest(number:<N>){closingIssuesReferences(first:10){nodes{number}}}}}'` lists the issues the PR will close. It only fills for PRs into `main`; for a PR into `dev`, check instead that the body has a `Closes #<number>` line, which is what the workflow reads.
+- **Set the milestone.** Open the PR with `--milestone "<title>"`, the milestone of the issue it implements (`gh issue view <number> --json milestone`). If `gh pr edit` fails with a "Projects (classic)" error (a bug in older `gh`), set it through REST instead, since a PR is an issue there: `gh api -X PATCH repos/TeddyBertrand/Mayfly/issues/<pr> -F milestone=<milestone number>`.
+- **What "Development" shows.** For PRs into `main`, the closing keyword links the PR to the issue. For PRs into `dev`, GitHub cannot link the PR at all: closing keywords are ignored there, the sidebar only offers the branch, and there is no API. So the issue shows the branch from `gh issue develop` (section 6), and the PR points to the issue through its `Closes #<number>` line. `dev` stays a non-default branch on purpose, so the repo's front page shows the released `main`.
+- **Check after opening.** Confirm the PR has the milestone (`gh pr view <N> --json milestone`), the issue lists the branch (`gh issue develop <number> --list`), and the body has its `Closes #<number>` line, which is what the `close-issues` workflow reads. For PRs into `main`, `gh api graphql -f query='{repository(owner:"TeddyBertrand",name:"Mayfly"){pullRequest(number:<N>){closingIssuesReferences(first:10){nodes{number}}}}}'` also lists the issues the PR will close.
 - The PR body still carries no AI attribution (see section 4).

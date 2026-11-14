@@ -182,3 +182,25 @@ Each entry records one decision, the options considered and the consequences. En
   - **C. SSH push after apply:** a second command copies the files and starts Compose. Nothing extra in Azure, but `apply` alone no longer yields a working system.
 - **Decision:** A. The vault uses Azure RBAC, 7-day soft delete and no purge protection, and lives in `mayfly-tfstate-rg`, outside the Terraform state, so `destroy` never deletes it.
 - **Consequences:** No secret value passes through Terraform, the state or custom_data. The identity and its role assignment die with the VM. Cloud-init retries for up to 10 minutes because a new role assignment takes minutes to apply. The metadata service hands out tokens for that identity, so blocking 169.254.0.0/16 for workers (decision 016) is now required, not just good practice. Rotating a secret means updating the vault and restarting `mayfly.service` or rebuilding the host. The vault costs a few cents a month.
+
+## 018. Ops endpoints on a separate listener
+- **Date:** 2026-11-14
+- **Status:** accepted
+- **Context:** #93. One listener on `:8080` serves `POST /webhook`, which must be reachable from the internet, and `GET /healthz`, which hands out the instance ID the reaper relies on (decision 012). M3 adds `/metrics`, which reveals queue sizes, failure counts and timings. On the cloud host `:8080` sits behind Caddy (decision 016), so anything on that listener is public. `/healthz` also serves as the external reachability check in `scripts/dev.sh`, `scripts/compose-dev.sh` and `infra/README.md`.
+- **Options considered:**
+  - **A. Full split:** the webhook listener serves only `POST /webhook`; an ops listener (`MAYFLY_OPS_ADDR`) serves `/healthz` and later `/metrics`, and is never published. External checks send `GET /webhook` and expect 405 from mayfly, since Caddy and cloudflared answer 502 or 530 when mayfly is unreachable. The 405 check is less obvious than a 200 and needs a comment.
+  - **B. Ops listener plus a public ping:** the ops listener as in A, and a bare public `GET /healthz` answering `ok` for external checks. Intuitive checks, but the public listener serves more than the webhook, and two endpoints share one name.
+  - **C. One listener, filtered by the proxies:** Caddy and the tunnel forward only `/webhook`. No new port, but `:8080` is also published on the host, so keeping `/metrics` private would rest on proxy config instead of on what listens.
+- **Decision:** A. `MAYFLY_OPS_ADDR` defaults to `127.0.0.1:8081`; Compose sets `:8081` so the reaper can reach it, and never publishes it. Port 9090 is avoided because it is Prometheus's own port.
+- **Consequences:** The internet-facing port does one job, and the instance ID is no longer public. The container healthcheck and the reaper's `MAYFLY_HEALTH_URL` move to port 8081. Prometheus scrapes 8081 over the Compose network in M3, with nothing new opened. Local runs outside Docker keep ops endpoints on loopback by default. External checks read "405 from `GET /webhook`" as "mayfly answered", which the scripts and docs must explain.
+
+## 019. Unit tests beside the code, end-to-end tests in `tests/`
+- **Date:** 2026-11-14
+- **Status:** accepted
+- **Context:** #95. The owner wanted tests out of the source folders, as in a C++ `tests/` tree, to make the code easier to read. In Go, visibility is per package and a package is a directory: only a `_test.go` file in the same directory can declare the same package and reach unexported code. All test files in the repo were white-box tests of unexported code (the tracker, the payload parser, the Docker engine client).
+- **Options considered:**
+  - **A. Tests beside the code, readability in the editor:** `foo_test.go` next to `foo.go`, as every Go project does; the editor hides or folds test files (Zed `hidden_files`, VS Code file nesting). No code change, and the tree only looks clean in a configured editor.
+  - **B. A `tests/` folder for end-to-end tests only:** tests that drive the system from outside, through exported APIs or the built binary, live in `tests/` behind an `e2e` build tag. Fits new black-box tests, not the existing unit tests.
+  - **C. Every test in `tests/`:** matches the C++ habit, but every white-box test would have to be deleted or the code would have to export internals just for tests, which makes it harder to read, not easier. It also breaks the convention Go reviewers expect.
+- **Decision:** A and B together. Unit tests stay beside the code; end-to-end tests go in `tests/` with `//go:build e2e`.
+- **Consequences:** `go test ./...` stays fast and never runs e2e tests; they run with `go test -tags e2e ./tests/...`. A `make e2e` target and the `tests/` folder arrive with the first e2e test, since `go test ./tests/...` fails while the folder does not exist. Tests that need a real external system but test internals (`internal/github/live_test.go`, `internal/worker/docker/docker_test.go`) stay beside their code and skip themselves unless enabled. `internal/provisioner/handoff_test.go`, which wires the real receiver to the provisioner, is the first candidate to move to `tests/`. Rules in `docs/go-conventions.md`.

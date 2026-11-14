@@ -3,6 +3,8 @@ package receiver
 import (
 	"reflect"
 	"testing"
+
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // queuedPayload is a trimmed workflow_job "queued" payload in GitHub's shape.
@@ -25,26 +27,26 @@ func TestParseWorkflowJob(t *testing.T) {
 	tests := []struct {
 		name       string
 		body       string
-		wantAction string
-		wantJob    Job
+		wantAction workflow.Action
+		wantJob    workflow.Job
 		wantErr    bool
 	}{
 		{
 			name:       "queued",
 			body:       queuedPayload,
-			wantAction: "queued",
-			wantJob:    Job{ID: 42, RunID: 7, Name: "build", Repo: "octo/demo", InstallationID: 99, Labels: []string{"self-hosted", "mayfly"}},
+			wantAction: workflow.ActionQueued,
+			wantJob:    workflow.Job{ID: 42, RunID: 7, Name: "build", Repo: "octo/demo", InstallationID: 99, Labels: []string{"self-hosted", "mayfly"}},
 		},
 		{
 			name:       "completed cancelled",
 			body:       completedPayload("cancelled", "mayfly-42-ab"),
-			wantAction: "completed",
-			wantJob: Job{ID: 42, RunID: 7, Name: "build", Repo: "octo/demo", InstallationID: 99, Labels: []string{"self-hosted", "mayfly"},
+			wantAction: workflow.ActionCompleted,
+			wantJob: workflow.Job{ID: 42, RunID: 7, Name: "build", Repo: "octo/demo", InstallationID: 99, Labels: []string{"self-hosted", "mayfly"},
 				RunnerName: "mayfly-42-ab", Conclusion: "cancelled"},
 		},
-		{"not json", `{`, "", Job{}, true},
-		{"missing job id", `{"action":"queued","workflow_job":{}}`, "", Job{}, true},
-		{"missing action", `{"workflow_job":{"id":1}}`, "", Job{}, true},
+		{"not json", `{`, "", workflow.Job{}, true},
+		{"missing job id", `{"action":"queued","workflow_job":{}}`, "", workflow.Job{}, true},
+		{"missing action", `{"workflow_job":{"id":1}}`, "", workflow.Job{}, true},
 	}
 
 	for _, tt := range tests {
@@ -55,31 +57,6 @@ func TestParseWorkflowJob(t *testing.T) {
 			}
 			if action != tt.wantAction || !reflect.DeepEqual(job, tt.wantJob) {
 				t.Errorf("got (%q, %+v), want (%q, %+v)", action, job, tt.wantAction, tt.wantJob)
-			}
-		})
-	}
-}
-
-// TestMatchesLabels checks that every required label must be present, case-insensitively.
-func TestMatchesLabels(t *testing.T) {
-	tests := []struct {
-		name     string
-		labels   []string
-		required []string
-		want     bool
-	}{
-		{"exact", []string{"mayfly"}, []string{"mayfly"}, true},
-		{"with self-hosted", []string{"self-hosted", "mayfly"}, []string{"mayfly"}, true},
-		{"case-insensitive", []string{"Mayfly"}, []string{"mayfly"}, true},
-		{"github-hosted", []string{"ubuntu-latest"}, []string{"mayfly"}, false},
-		{"missing one of two", []string{"mayfly"}, []string{"mayfly", "linux"}, false},
-		{"no labels", nil, []string{"mayfly"}, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := (Job{Labels: tt.labels}).MatchesLabels(tt.required); got != tt.want {
-				t.Errorf("MatchesLabels = %v, want %v", got, tt.want)
 			}
 		})
 	}

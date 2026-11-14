@@ -139,10 +139,59 @@ Cloud-init installs Docker, applies the worker egress rules, and starts the Comp
 
 ### **done** [ci] Release v0.2.1 (#87)
 Publish v0.2.1 (decision 010) so `main` ships the one-command Azure deploy from #20 (Key Vault secrets, Caddy, cloud-init Compose deploy). Closes M2. Also marks the v0.2.0 release (#83) and the multi-arch image box of #80 done in the draft, and moves the Terraform default `mayfly_version` to `0.2.1`.
-- [ ] `VERSION` is `0.2.1` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.2.1` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.2.1` published for amd64 and arm64
+- [x] `VERSION` is `0.2.1` on `dev` and merged into `main`
+- [x] GitHub Release `v0.2.1` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.2.1` published for amd64 and arm64
 - [x] Terraform default `mayfly_version` is `0.2.1`
+
+## M2.5 - Refactor
+
+Clean up package boundaries before M3 instruments them, so metrics code is written once against the final layout. No behaviour change unless stated: `go test ./...` passes without changing test assertions.
+
+### **done** [refacto] Move `Job` and the `workflow_job` actions into a shared `job` package (#90)
+`provisioner` and `reaper` import `receiver` only for `receiver.Job`, and the reaper builds a fake `receiver.Job` to call `MatchesLabels`. Move `Job` and `MatchesLabels` to `internal/workflow`, and make the actions (`queued`, `in_progress`, `completed`) typed constants instead of raw strings. The package is named `workflow`, not `job`, because a package named `job` is shadowed by the `job` variables that use it.
+- [x] No package imports `receiver` except `cmd/mayfly`
+- [x] No raw action strings outside `internal/workflow`
+
+### **done** [refacto] Decouple the reaper from the Docker backend (#91)
+`reaper.Workers` returns `docker.Worker`, so the reaper depends on one concrete backend. Move the worker inventory type and its list/remove interface into `internal/worker`, implemented by `worker/docker`, so a Firecracker backend (M7) plugs in without touching the reaper. The type is `worker.Info` and the interface `worker.Inventory`, next to `worker.Backend`.
+- [x] `internal/reaper` does not import `internal/worker/docker`
+
+### **done** [refacto] Split config into shared GitHub App and Docker settings (#92)
+`ReaperConfig` embeds the whole `ProvisionerConfig`, so the reaper loads settings it never uses, and `config` imports `github` and `worker/docker` for defaults. Introduce shared `GitHubApp` and `Docker` sub-structs that each process composes, and give `provisioner.New` and `docker.New` option structs instead of long positional arguments. The shared defaults now live in `config`, and `setwebhook` loads only `LoadGitHubApp`.
+- [x] The reaper only loads the settings it uses
+- [x] `internal/config` imports no other internal package
+- [x] No constructor takes two adjacent arguments of the same type
+
+### **done** [refacto] Serve `/healthz` from a separate ops server (#93)
+`/healthz` shares the public webhook router, and `receiver.Handoff` and `receiver.Webhook` repeat the same fields. Move `/healthz` to a small ops server on its own listener, which M3 reuses for `/metrics`. Behaviour change: new port, Compose healthcheck and reaper `HealthURL` updated. Record the choice in `docs/design-decisions.md`. Done as decision 018: `MAYFLY_OPS_ADDR` (default `127.0.0.1:8081`), and external checks expect 405 from `GET /webhook`.
+- [x] Decision recorded
+- [x] The webhook listener serves only `/webhook`
+- [ ] Compose stack and Terraform deploy healthy with the new port (Compose checked locally with throwaway credentials; Terraform not run)
+
+### **done** [refacto] No magic values, enforced by linters (#94)
+Every number or string with a meaning gets a name, defined once: defaults, timeouts, limits, the `mayfly-` runner prefix, runner statuses, the GitHub API version, and duplicated helpers such as `shortID`. Go `const` covers scalars only, so fixed slices and maps stay unexported `var`s or functions returning copies. Enable `mnd` and `goconst` in `.golangci.yml`. Literals that stay: `0`, `1`, `""` in their usual roles, stdlib idioms such as `strconv.ParseInt(v, 10, 64)`, log and error messages, struct tags, test fixtures. Whether log attribute keys become constants is decided first. Log keys became constants in `internal/logkey`; the rules live in the new `docs/go-conventions.md`.
+- [x] Convention documented in the Go conventions doc
+- [x] `mnd` and `goconst` enabled, `golangci-lint run` clean
+
+### **done** [docs] Test layout convention (#95)
+Go visibility is per package and a package is a directory, so unit tests stay next to the code they test (`foo_test.go` beside `foo.go`) to reach unexported code. End-to-end tests that drive the system from outside, through its exported API or binary, go in a top-level `tests/` directory behind an `e2e` build tag so `go test ./...` stays fast. Readability of the source tree is handled in the editor (e.g. Zed `hidden_files`), not by moving tests. Recorded as decision 019; `tests/` and a `make e2e` target arrive with the first e2e test.
+- [x] Decision recorded in `docs/design-decisions.md`
+- [x] Convention documented in the Go conventions doc, including the build tag and how to run e2e tests
+
+### **done** [docs] Link PRs to their milestone and issue (#98)
+Every PR should carry the milestone of the issue it implements and show under that issue's "Development". Closing keywords only fill "Development" for PRs into the default branch (`main`), and GitHub has no API to link an existing PR, so PRs into `dev` stay unlinked. Checked on #99: a branch from `gh issue develop` is listed under "Development" but is not promoted to a PR link, and the sidebar does not offer PRs into `dev` either. So create each branch from its issue with `gh issue develop` so the issue lists the branch, set the milestone when opening the PR, and let the PR point to the issue through `Closes #<number>`. `dev` stays a non-default branch so the repo's front page shows the released `main`. Document all of it in `CLAUDE.md` sections 6 and 7.
+- [x] `CLAUDE.md` section 6 creates branches with `gh issue develop`
+- [x] `CLAUDE.md` section 7 requires the milestone, explains what "Development" shows, and lists the checks to run after opening
+- [x] The PR for this issue shows the milestone, and the issue lists its branch under "Development"
+
+### **done** [ci] Release v0.2.5 (#105)
+Publish v0.2.5 (decision 010) so `main` ships the M2.5 refactor: shared `workflow` package, reaper decoupled from Docker, config split, the ops listener on port 8081 (decision 018), no magic values, and the test layout (decision 019). Moves the Terraform default `mayfly_version` to `0.2.5` in the same change, because Terraform deploys the working-tree `compose.yaml`, which now points the reaper at port 8081, a port only the 0.2.5 image opens. Also marks the v0.2.1 release (#87) done in the draft, checked against the published release, the image manifest and `mayfly --version`.
+- [ ] `VERSION` is `0.2.5` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.2.5` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.2.5` published for amd64 and arm64
+- [ ] `mayfly --version` in the image prints `0.2.5`
+- [x] Terraform default `mayfly_version` is `0.2.5`
 
 ## M3 - Observability and baseline
 

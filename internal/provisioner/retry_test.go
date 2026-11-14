@@ -38,7 +38,7 @@ func runUntilLogged(t *testing.T, p *Provisioner, logs *syncBuffer, want string)
 // TestJITRetriedThenSucceeds checks temporary failures are retried with a fresh runner name each time.
 func TestJITRetriedThenSucceeds(t *testing.T) {
 	jit, b := &fakeJIT{err: flakyErr{}, failures: 2}, newFakeBackend(false)
-	p, logs := newTestProvisioner(jit, b, 1, 10)
+	p, logs := newTestProvisioner(jit, b, Options{Workers: 1, QueueSize: 10})
 
 	runUntilLogged(t, p, logs, "job done")
 
@@ -63,7 +63,7 @@ func TestJITRetriedThenSucceeds(t *testing.T) {
 // TestJITGivesUp checks a failure that never clears stops after the policy's attempts with a clear error.
 func TestJITGivesUp(t *testing.T) {
 	jit, b := &fakeJIT{err: flakyErr{}}, newFakeBackend(false)
-	p, logs := newTestProvisioner(jit, b, 1, 10)
+	p, logs := newTestProvisioner(jit, b, Options{Workers: 1, QueueSize: 10})
 
 	runUntilLogged(t, p, logs, `"msg":"jit config failed"`)
 

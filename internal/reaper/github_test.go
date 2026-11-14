@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
-	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
+	"github.com/TeddyBertrand/Mayfly/internal/worker"
 )
 
 // stale is an offline mayfly registration with no container behind it.
@@ -57,12 +57,12 @@ func TestRegistrationsNeverDeleted(t *testing.T) {
 	tests := []struct {
 		name    string
 		reg     github.RunnerRegistration
-		workers []docker.Worker
+		workers []worker.Info
 	}{
 		{"online", github.RunnerRegistration{ID: 1, Name: "mayfly-1-aa", Status: "online"}, nil},
 		{"not a mayfly runner", github.RunnerRegistration{ID: 2, Name: "build-box", Status: "offline"}, nil},
 		{"container still booting", github.RunnerRegistration{ID: 3, Name: "mayfly-3-aa", Status: "offline"},
-			[]docker.Worker{worker("c", 30*time.Second, "live", 3)}},
+			[]worker.Info{workerInfo("c", 30*time.Second, "live", 3)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestRegistrationsNeverDeleted(t *testing.T) {
 // TestRemovedContainerFreesRegistration checks a container removed by this sweep stops claiming its registration.
 func TestRemovedContainerFreesRegistration(t *testing.T) {
 	reg := github.RunnerRegistration{ID: 7, Name: "mayfly-7-aa", Status: "offline"}
-	fw := &fakeWorkers{workers: []docker.Worker{worker("old", time.Minute, "before-crash", 7)}}
+	fw := &fakeWorkers{workers: []worker.Info{workerInfo("old", time.Minute, "before-crash", 7)}}
 	fr := &fakeRunners{regs: []github.RunnerRegistration{reg}}
 	var clock time.Time
 	rp := clockReaper(fw, fr, liveOwner("after-restart"), &clock)
@@ -122,7 +122,7 @@ func TestStaleWindowRestarts(t *testing.T) {
 
 // TestGitHubFailuresAreSafe checks GitHub errors never delete anything and never block container cleanup.
 func TestGitHubFailuresAreSafe(t *testing.T) {
-	fw := &fakeWorkers{workers: []docker.Worker{worker("old", 7*time.Hour, "live", 0)}}
+	fw := &fakeWorkers{workers: []worker.Info{workerInfo("old", 7*time.Hour, "live", 0)}}
 	fr := &fakeRunners{regs: []github.RunnerRegistration{stale}, reposErr: errors.New("502")}
 	var clock time.Time
 	rp := clockReaper(fw, fr, liveOwner("live"), &clock)
