@@ -148,10 +148,10 @@ Publish v0.2.1 (decision 010) so `main` ships the one-command Azure deploy from 
 
 Clean up package boundaries before M3 instruments them, so metrics code is written once against the final layout. No behaviour change unless stated: `go test ./...` passes without changing test assertions.
 
-### [refacto] Move `Job` and the `workflow_job` actions into a shared `job` package
-`provisioner` and `reaper` import `receiver` only for `receiver.Job`, and the reaper builds a fake `receiver.Job` to call `MatchesLabels`. Move `Job` and `MatchesLabels` to `internal/job`, and make the actions (`queued`, `in_progress`, `completed`) typed constants instead of raw strings.
-- [ ] No package imports `receiver` except `cmd/mayfly`
-- [ ] No raw action strings outside `internal/job`
+### **done** [refacto] Move `Job` and the `workflow_job` actions into a shared `job` package (#90)
+`provisioner` and `reaper` import `receiver` only for `receiver.Job`, and the reaper builds a fake `receiver.Job` to call `MatchesLabels`. Move `Job` and `MatchesLabels` to `internal/workflow`, and make the actions (`queued`, `in_progress`, `completed`) typed constants instead of raw strings. The package is named `workflow`, not `job`, because a package named `job` is shadowed by the `job` variables that use it.
+- [x] No package imports `receiver` except `cmd/mayfly`
+- [x] No raw action strings outside `internal/workflow`
 
 ### [refacto] Decouple the reaper from the Docker backend
 `reaper.Workers` returns `docker.Worker`, so the reaper depends on one concrete backend. Move the worker inventory type and its list/remove interface into `internal/worker`, implemented by `worker/docker`, so a Firecracker backend (M7) plugs in without touching the reaper.
