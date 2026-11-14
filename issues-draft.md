@@ -132,10 +132,10 @@ Publish v0.2.0 (decision 010) so the cloud host can pull a pinned image for #20.
 - [ ] `ghcr.io/teddybertrand/mayfly:0.2.0` published for amd64 and arm64, and pullable by the host
 - [ ] `mayfly --version` in the image prints `0.2.0`
 
-### [infra] Terraform: bootstrap and secrets
+### **done** [infra] Terraform: bootstrap and secrets (#20)
 Cloud-init installs Docker, applies the worker egress rules, and starts the Compose deploy with a pinned image version. Secrets (webhook secret, App key) are injected without being committed.
-- [ ] From a clean account, `terraform apply` yields a working system
-- [ ] `terraform destroy` removes everything
+- [x] From a clean account, `terraform apply` yields a working system
+- [x] `terraform destroy` removes everything
 
 ## M3 - Observability and baseline
 

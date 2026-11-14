@@ -56,6 +56,46 @@ variable "vnet_cidr" {
   default     = "10.42.0.0/16"
 }
 
+variable "app_id" {
+  description = "GitHub App ID (not a secret)."
+  type        = string
+}
+
+variable "mayfly_version" {
+  description = "Release of ghcr.io/teddybertrand/mayfly to run; pinned so every rebuild runs the same code."
+  type        = string
+  default     = "0.2.0"
+
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.mayfly_version))
+    error_message = "mayfly_version must be a release version such as 0.2.0, not dev or latest."
+  }
+}
+
+variable "runner_labels" {
+  description = "Comma-separated runner labels mayfly serves."
+  type        = string
+  default     = "mayfly"
+}
+
+variable "workers" {
+  description = "Maximum concurrent workers (MAYFLY_WORKERS); keep it low on the 1 GB size."
+  type        = number
+  default     = 1
+}
+
+variable "key_vault_name" {
+  description = "Key Vault holding webhook-secret and app-key; empty uses the name bootstrap.sh derives."
+  type        = string
+  default     = ""
+}
+
+variable "key_vault_resource_group" {
+  description = "Resource group of the Key Vault, created by bootstrap.sh."
+  type        = string
+  default     = "mayfly-tfstate-rg"
+}
+
 variable "tags" {
   description = "Tags applied to every resource."
   type        = map(string)

@@ -7,11 +7,13 @@ The Azure host for benchmarks and CI-heavy sprints (decisions 014 and 016). It e
 | Resource | Notes |
 |---|---|
 | `mayfly-tfstate-rg` + storage account | Created once by `bootstrap/bootstrap.sh`, never by Terraform. Entra ID access only (no shared keys), versioning and 30-day soft delete. Survives `destroy`. |
+| Key Vault `mayfly-kv-<hash>` in `mayfly-tfstate-rg` | Also created by `bootstrap.sh`, holds `webhook-secret` and `app-key` (decision 017). Survives `destroy`. |
 | `mayfly-rg` | Everything below; `destroy` removes it all. |
 | VNet `10.42.0.0/16`, subnet `host` | Workers are blocked from the whole VNet. |
 | NSG on the subnet | Inbound 22 from `ssh_allowed_cidr` only, 80 and 443 from the internet. Everything else inbound is denied. |
 | Static public IP | Stable name `mayfly-<hash>.denmarkeast.cloudapp.azure.com` across rebuilds. |
-| Ubuntu 24.04 VM | `Standard_B2ats_v2` (free tier, 1 GB) by default. Cloud-init installs Docker and the worker egress rules. |
+| Ubuntu 24.04 VM | `Standard_B2ats_v2` (free tier, 1 GB) by default. Cloud-init installs Docker and the worker egress rules, then starts the Compose deploy. |
+| VM managed identity + `Key Vault Secrets User` role | Lets the VM read the two secrets with no stored credential. Removed by `destroy`. |
 
 ## First time
 
@@ -21,21 +23,37 @@ Needs the Azure CLI, Terraform 1.15 or later, and `az login` on the Azure for St
 infra/bootstrap/bootstrap.sh
 ```
 
-It writes `infra/terraform/backend.hcl` (gitignored). The storage role can take a few minutes to apply. Then:
+It writes `infra/terraform/backend.hcl` (gitignored) and prints the vault name. The roles can take a few minutes to apply. Upload the secrets once; `--file` keeps them out of your shell history:
+
+```bash
+az keyvault secret set --vault-name mayfly-kv-<hash> --name webhook-secret --file ~/.config/mayfly/webhook-secret --output none
+az keyvault secret set --vault-name mayfly-kv-<hash> --name app-key --file ~/.config/mayfly/app.pem --output none
+```
+
+Then:
 
 ```bash
 cd infra/terraform
-cp terraform.tfvars.example terraform.tfvars   # set ssh_allowed_cidr to your IP, e.g. "$(curl -s ifconfig.me)/32"
+cp terraform.tfvars.example terraform.tfvars   # set ssh_allowed_cidr to your IP and app_id
 terraform init -backend-config=backend.hcl
 ```
+
+After the first `apply`, set the GitHub App webhook URL to `terraform output -raw webhook_url`. The DNS name is stable, so this is done once.
 
 ## Each session
 
 ```bash
-terraform apply                                  # about 3 minutes, then cloud-init needs 2-3 more
+terraform apply                                  # about 3 minutes, then cloud-init needs 3-5 more
 ssh "$(terraform output -raw ssh | cut -d' ' -f2)" cloud-init status --wait
-terraform destroy                                # when done; only the state storage remains
+curl -fsS "https://$(terraform output -raw fqdn)/healthz"
+terraform destroy                                # when done; only the state storage and the vault remain
 ```
+
+Each rebuild has a new SSH host key under the same name, so `ssh` warns that the key changed. Remove the old one with `ssh-keygen -R "$(terraform output -raw fqdn)"`.
+
+`make dev` points the App webhook back at your tunnel; run `go run ./cmd/setwebhook "$(terraform output -raw webhook_url)"` to send it to the host again.
+
+The image is pinned by `mayfly_version` (default `0.2.0`). On the host, the deploy lives in `/opt/mayfly`, runs as `mayfly.service`, and logs with `journalctl -u mayfly` and `docker compose -f /opt/mayfly/compose.yaml logs`.
 
 For benchmarks, `terraform apply -var vm_size=Standard_B2als_v2` (4 GB). Quotas in `denmarkeast`: 10 vCPU for `Basv2`, 4 for `BS`, 6 in total.
 
