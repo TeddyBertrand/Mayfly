@@ -163,11 +163,11 @@ Clean up package boundaries before M3 instruments them, so metrics code is writt
 - [x] `internal/config` imports no other internal package
 - [x] No constructor takes two adjacent arguments of the same type
 
-### [refacto] Serve `/healthz` from a separate ops server
-`/healthz` shares the public webhook router, and `receiver.Handoff` and `receiver.Webhook` repeat the same fields. Move `/healthz` to a small ops server on its own listener, which M3 reuses for `/metrics`. Behaviour change: new port, Compose healthcheck and reaper `HealthURL` updated. Record the choice in `docs/design-decisions.md`.
-- [ ] Decision recorded
-- [ ] The webhook listener serves only `/webhook`
-- [ ] Compose stack and Terraform deploy healthy with the new port
+### **done** [refacto] Serve `/healthz` from a separate ops server (#93)
+`/healthz` shares the public webhook router, and `receiver.Handoff` and `receiver.Webhook` repeat the same fields. Move `/healthz` to a small ops server on its own listener, which M3 reuses for `/metrics`. Behaviour change: new port, Compose healthcheck and reaper `HealthURL` updated. Record the choice in `docs/design-decisions.md`. Done as decision 018: `MAYFLY_OPS_ADDR` (default `127.0.0.1:8081`), and external checks expect 405 from `GET /webhook`.
+- [x] Decision recorded
+- [x] The webhook listener serves only `/webhook`
+- [ ] Compose stack and Terraform deploy healthy with the new port (Compose checked locally with throwaway credentials; Terraform not run)
 
 ### [refacto] No magic values, enforced by linters
 Every number or string with a meaning gets a name, defined once: defaults, timeouts, limits, the `mayfly-` runner prefix, runner statuses, the GitHub API version, and duplicated helpers such as `shortID`. Go `const` covers scalars only, so fixed slices and maps stay unexported `var`s or functions returning copies. Enable `mnd` and `goconst` in `.golangci.yml`. Literals that stay: `0`, `1`, `""` in their usual roles, stdlib idioms such as `strconv.ParseInt(v, 10, 64)`, log and error messages, struct tags, test fixtures. Whether log attribute keys become constants is decided first.
