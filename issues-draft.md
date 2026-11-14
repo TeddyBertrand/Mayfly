@@ -174,10 +174,10 @@ Every number or string with a meaning gets a name, defined once: defaults, timeo
 - [x] Convention documented in the Go conventions doc
 - [x] `mnd` and `goconst` enabled, `golangci-lint run` clean
 
-### [docs] Test layout convention
-Go visibility is per package and a package is a directory, so unit tests stay next to the code they test (`foo_test.go` beside `foo.go`) to reach unexported code. End-to-end tests that drive the system from outside, through its exported API or binary, go in a top-level `tests/` directory behind an `e2e` build tag so `go test ./...` stays fast. Readability of the source tree is handled in the editor (e.g. Zed `hidden_files`), not by moving tests.
-- [ ] Decision recorded in `docs/design-decisions.md`
-- [ ] Convention documented in the Go conventions doc, including the build tag and how to run e2e tests
+### **done** [docs] Test layout convention (#95)
+Go visibility is per package and a package is a directory, so unit tests stay next to the code they test (`foo_test.go` beside `foo.go`) to reach unexported code. End-to-end tests that drive the system from outside, through its exported API or binary, go in a top-level `tests/` directory behind an `e2e` build tag so `go test ./...` stays fast. Readability of the source tree is handled in the editor (e.g. Zed `hidden_files`), not by moving tests. Recorded as decision 019; `tests/` and a `make e2e` target arrive with the first e2e test.
+- [x] Decision recorded in `docs/design-decisions.md`
+- [x] Convention documented in the Go conventions doc, including the build tag and how to run e2e tests
 
 ### **done** [docs] Link PRs to their milestone and issue (#98)
 Every PR should carry the milestone of the issue it implements and show under that issue's "Development". Closing keywords only fill "Development" for PRs into the default branch (`main`), and GitHub has no API to link an existing PR, so PRs into `dev` stay unlinked. Checked on #99: a branch from `gh issue develop` is listed under "Development" but is not promoted to a PR link, and the sidebar does not offer PRs into `dev` either. So create each branch from its issue with `gh issue develop` so the issue lists the branch, set the milestone when opening the PR, and let the PR point to the issue through `Closes #<number>`. `dev` stays a non-default branch so the repo's front page shows the released `main`. Document all of it in `CLAUDE.md` sections 6 and 7.

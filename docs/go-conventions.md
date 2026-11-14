@@ -46,3 +46,38 @@ A typo in a key then fails to compile instead of silently breaking a log search,
 `golangci-lint` runs `mnd` (magic number detector) and `goconst` (repeated strings) on production code; test files are excluded because fixtures stay literal.
 
 They catch unnamed numbers and strings repeated three or more times in one package, in comparisons, assignments and returns. They do **not** catch a meaningful string used once or twice, a value repeated across packages, or strings inside composite literals such as `[]string{...}` or map literals (checked: `goconst` ignores those). Those are this page's job, and code review's.
+
+## Tests
+
+Where a test lives depends on what it can see ([decision 019](design-decisions.md)).
+
+| Kind | Where | Package | Runs with |
+|---|---|---|---|
+| Unit test | `foo_test.go` beside `foo.go` | `package foo` (same package, so it reaches unexported code) | `go test ./...` |
+| Test against a real external system (GitHub, the Docker daemon) that still tests internals | beside the code it tests | `package foo` | `go test ./...`, skipped unless enabled |
+| End-to-end test that drives Mayfly from outside, through exported APIs or the built binary | `tests/` | its own package, starting with `//go:build e2e` | `go test -tags e2e ./tests/...` |
+
+**Unit tests.** Table-driven where the cases share a shape. Fixtures stay literal (see [No magic values](#no-magic-values)). Fakes implement the same interfaces the code depends on (`worker.Inventory`, `provisioner.JITIssuer`), so no mocking library is needed.
+
+**Tests against real systems.** They skip themselves unless their system is there, so `go test ./...` passes on any machine: `MAYFLY_LIVE_TEST=1` enables `internal/github/live_test.go` (real GitHub, needs App credentials), the Docker tests skip when no daemon answers, and `MAYFLY_DOCKER_TEST=1` enables the one that pulls the full runner image.
+
+**End-to-end tests.** The first line of every file in `tests/` is the build constraint, followed by a blank line:
+
+```go
+//go:build e2e
+
+package tests
+```
+
+Go compiles the file only when `-tags e2e` is passed, so `go test ./...` never runs it and stays fast. The `tests/` folder and a `make e2e` target are added with the first e2e test: `go test ./tests/...` fails while the folder does not exist. The first candidate is `internal/provisioner/handoff_test.go`, which wires the real receiver to the provisioner.
+
+**Readability.** Tests are not moved to declutter the tree; the editor hides them. In Zed, add to the user settings (not the repo's `.zed/`, since it is a personal preference):
+
+```json
+{
+  "hidden_files": ["**/.*", "**/*_test.go"],
+  "project_panel": { "hide_hidden": true }
+}
+```
+
+Toggle them back with `project panel: toggle hide hidden`.
