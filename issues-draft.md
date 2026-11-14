@@ -144,6 +144,41 @@ Publish v0.2.1 (decision 010) so `main` ships the one-command Azure deploy from 
 - [ ] `ghcr.io/teddybertrand/mayfly:0.2.1` published for amd64 and arm64
 - [x] Terraform default `mayfly_version` is `0.2.1`
 
+## M2.5 - Refactor
+
+Clean up package boundaries before M3 instruments them, so metrics code is written once against the final layout. No behaviour change unless stated: `go test ./...` passes without changing test assertions.
+
+### [refacto] Move `Job` and the `workflow_job` actions into a shared `job` package
+`provisioner` and `reaper` import `receiver` only for `receiver.Job`, and the reaper builds a fake `receiver.Job` to call `MatchesLabels`. Move `Job` and `MatchesLabels` to `internal/job`, and make the actions (`queued`, `in_progress`, `completed`) typed constants instead of raw strings.
+- [ ] No package imports `receiver` except `cmd/mayfly`
+- [ ] No raw action strings outside `internal/job`
+
+### [refacto] Decouple the reaper from the Docker backend
+`reaper.Workers` returns `docker.Worker`, so the reaper depends on one concrete backend. Move the worker inventory type and its list/remove interface into `internal/worker`, implemented by `worker/docker`, so a Firecracker backend (M7) plugs in without touching the reaper.
+- [ ] `internal/reaper` does not import `internal/worker/docker`
+
+### [refacto] Split config into shared GitHub App and Docker settings
+`ReaperConfig` embeds the whole `ProvisionerConfig`, so the reaper loads settings it never uses, and `config` imports `github` and `worker/docker` for defaults. Introduce shared `GitHubApp` and `Docker` sub-structs that each process composes, and give `provisioner.New` and `docker.New` option structs instead of long positional arguments.
+- [ ] The reaper only loads the settings it uses
+- [ ] `internal/config` imports no other internal package
+- [ ] No constructor takes two adjacent arguments of the same type
+
+### [refacto] Serve `/healthz` from a separate ops server
+`/healthz` shares the public webhook router, and `receiver.Handoff` and `receiver.Webhook` repeat the same fields. Move `/healthz` to a small ops server on its own listener, which M3 reuses for `/metrics`. Behaviour change: new port, Compose healthcheck and reaper `HealthURL` updated. Record the choice in `docs/design-decisions.md`.
+- [ ] Decision recorded
+- [ ] The webhook listener serves only `/webhook`
+- [ ] Compose stack and Terraform deploy healthy with the new port
+
+### [refacto] No magic values, enforced by linters
+Every number or string with a meaning gets a name, defined once: defaults, timeouts, limits, the `mayfly-` runner prefix, runner statuses, the GitHub API version, and duplicated helpers such as `shortID`. Go `const` covers scalars only, so fixed slices and maps stay unexported `var`s or functions returning copies. Enable `mnd` and `goconst` in `.golangci.yml`. Literals that stay: `0`, `1`, `""` in their usual roles, stdlib idioms such as `strconv.ParseInt(v, 10, 64)`, log and error messages, struct tags, test fixtures. Whether log attribute keys become constants is decided first.
+- [ ] Convention documented in the Go conventions doc
+- [ ] `mnd` and `goconst` enabled, `golangci-lint run` clean
+
+### [docs] Test layout convention
+Go visibility is per package and a package is a directory, so unit tests stay next to the code they test (`foo_test.go` beside `foo.go`) to reach unexported code. End-to-end tests that drive the system from outside, through its exported API or binary, go in a top-level `tests/` directory behind an `e2e` build tag so `go test ./...` stays fast. Readability of the source tree is handled in the editor (e.g. Zed `hidden_files`), not by moving tests.
+- [ ] Decision recorded in `docs/design-decisions.md`
+- [ ] Convention documented in the Go conventions doc, including the build tag and how to run e2e tests
+
 ## M3 - Observability and baseline
 
 ### [observability] Prometheus metrics in the receiver, provisioner and reaper
