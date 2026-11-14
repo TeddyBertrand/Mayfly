@@ -137,6 +137,13 @@ Cloud-init installs Docker, applies the worker egress rules, and starts the Comp
 - [x] From a clean account, `terraform apply` yields a working system
 - [x] `terraform destroy` removes everything
 
+### **done** [ci] Release v0.2.1 (#87)
+Publish v0.2.1 (decision 010) so `main` ships the one-command Azure deploy from #20 (Key Vault secrets, Caddy, cloud-init Compose deploy). Closes M2. Also marks the v0.2.0 release (#83) and the multi-arch image box of #80 done in the draft, and moves the Terraform default `mayfly_version` to `0.2.1`.
+- [ ] `VERSION` is `0.2.1` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.2.1` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.2.1` published for amd64 and arm64
+- [x] Terraform default `mayfly_version` is `0.2.1`
+
 ## M3 - Observability and baseline
 
 ### [observability] Prometheus metrics in the receiver, provisioner and reaper
