@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
-	"github.com/TeddyBertrand/Mayfly/internal/receiver"
 	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // fakeJIT records JIT requests and returns a fixed config or error.
@@ -111,10 +111,10 @@ func waitStarted(t *testing.T, b *fakeBackend, n int) {
 	}
 }
 
-var testJob = receiver.Job{ID: 4242, Repo: "octo/demo", InstallationID: 9}
+var testJob = workflow.Job{ID: 4242, Repo: "octo/demo", InstallationID: 9}
 
 // jobN returns testJob with a distinct ID, since the provisioner tracks one entry per job ID.
-func jobN(i int) receiver.Job {
+func jobN(i int) workflow.Job {
 	j := testJob
 	j.ID = int64(1000 + i)
 	return j
@@ -237,18 +237,18 @@ func TestCapUnderBurst(t *testing.T) {
 	go p.Run(ctx)
 
 	for i := range workers {
-		if err := p.Enqueue(receiver.Job{ID: int64(i + 1), Repo: "octo/demo"}); err != nil {
+		if err := p.Enqueue(workflow.Job{ID: int64(i + 1), Repo: "octo/demo"}); err != nil {
 			t.Fatalf("enqueue %d: %v", i, err)
 		}
 	}
 	waitFor(t, b.started, workers, "started")
 
 	for i := workers; i < burst; i++ {
-		if err := p.Enqueue(receiver.Job{ID: int64(i + 1), Repo: "octo/demo"}); err != nil {
+		if err := p.Enqueue(workflow.Job{ID: int64(i + 1), Repo: "octo/demo"}); err != nil {
 			t.Fatalf("enqueue %d with workers busy: %v", i, err)
 		}
 	}
-	if err := p.Enqueue(receiver.Job{ID: burst + 1, Repo: "octo/demo"}); !errors.Is(err, ErrQueueFull) {
+	if err := p.Enqueue(workflow.Job{ID: burst + 1, Repo: "octo/demo"}); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("overflow err = %v, want ErrQueueFull", err)
 	}
 

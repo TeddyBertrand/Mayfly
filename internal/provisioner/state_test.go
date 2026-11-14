@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TeddyBertrand/Mayfly/internal/receiver"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // TestTransitions checks every (from, to) pair against the documented state machine.
@@ -33,17 +33,18 @@ func TestTransitions(t *testing.T) {
 // TestTarget checks the state each workflow_job action asks for.
 func TestTarget(t *testing.T) {
 	tests := []struct {
-		action, conclusion string
-		cur, want          State
+		action     workflow.Action
+		conclusion string
+		cur, want  State
 	}{
-		{"in_progress", "", Ready, Running},
-		{"completed", "success", Running, Done},
-		{"completed", "cancelled", Running, Done},
-		{"completed", "cancelled", Waiting, Dropped},
-		{"completed", "cancelled", Provisioning, Dropped},
-		{"completed", "cancelled", Ready, Dropped},
-		{"completed", "success", Ready, Done},
-		{"completed", "failure", Waiting, Done},
+		{workflow.ActionInProgress, "", Ready, Running},
+		{workflow.ActionCompleted, "success", Running, Done},
+		{workflow.ActionCompleted, "cancelled", Running, Done},
+		{workflow.ActionCompleted, "cancelled", Waiting, Dropped},
+		{workflow.ActionCompleted, "cancelled", Provisioning, Dropped},
+		{workflow.ActionCompleted, "cancelled", Ready, Dropped},
+		{workflow.ActionCompleted, "success", Ready, Done},
+		{workflow.ActionCompleted, "failure", Waiting, Done},
 	}
 	for _, tt := range tests {
 		if got := target(tt.action, tt.conclusion, tt.cur); got != tt.want {
@@ -63,8 +64,8 @@ func TestStateString(t *testing.T) {
 }
 
 // cancelled returns a completed event for id with conclusion "cancelled" and no runner.
-func cancelled(id int64) receiver.Job {
-	return receiver.Job{ID: id, Repo: "octo/demo", Conclusion: "cancelled"}
+func cancelled(id int64) workflow.Job {
+	return workflow.Job{ID: id, Repo: "octo/demo", Conclusion: "cancelled"}
 }
 
 // startOne runs p with one blocking worker, enqueues jobN(0) and waits until its worker is up.
@@ -111,7 +112,7 @@ func TestCancelWhileWaiting(t *testing.T) {
 	if err := p.Enqueue(queued); err != nil {
 		t.Fatal(err)
 	}
-	p.Update("completed", cancelled(queued.ID))
+	p.Update(workflow.ActionCompleted, cancelled(queued.ID))
 	wantState(t, p, queued.ID, Dropped)
 
 	close(b.release)
@@ -132,7 +133,7 @@ func TestCancelWhileReady(t *testing.T) {
 	id := jobN(0).ID
 	wantState(t, p, id, Ready)
 
-	p.Update("completed", cancelled(id))
+	p.Update(workflow.ActionCompleted, cancelled(id))
 	waitUntracked(t, p, id)
 	if !strings.Contains(logs.String(), "worker stopped, job cancelled before it started") {
 		t.Errorf("stop not logged:\n%s", logs.String())
@@ -148,12 +149,12 @@ func TestRunningJobIsNotKilled(t *testing.T) {
 	runner := jit.names[0]
 	jit.mu.Unlock()
 
-	other := receiver.Job{ID: 777, Repo: "octo/demo", RunnerName: runner}
-	p.Update("in_progress", other)
+	other := workflow.Job{ID: 777, Repo: "octo/demo", RunnerName: runner}
+	p.Update(workflow.ActionInProgress, other)
 	wantState(t, p, id, Running)
 
 	other.Conclusion = "cancelled"
-	p.Update("completed", other)
+	p.Update(workflow.ActionCompleted, other)
 	wantState(t, p, id, Done)
 
 	close(b.release)
@@ -167,8 +168,8 @@ func TestRunningJobIsNotKilled(t *testing.T) {
 func TestOutOfOrderEvents(t *testing.T) {
 	p, _, _, logs := startOne(t)
 	id := jobN(0).ID
-	p.Update("completed", receiver.Job{ID: id, Conclusion: "success"})
-	p.Update("in_progress", receiver.Job{ID: id})
+	p.Update(workflow.ActionCompleted, workflow.Job{ID: id, Conclusion: "success"})
+	p.Update(workflow.ActionInProgress, workflow.Job{ID: id})
 	wantState(t, p, id, Done)
 	if !strings.Contains(logs.String(), "transition done -> running not allowed") {
 		t.Errorf("late in_progress not rejected:\n%s", logs.String())
@@ -203,7 +204,7 @@ func TestQueueFullStopsTracking(t *testing.T) {
 // TestUpdateUntracked checks an event for a job this process never saw is logged and ignored.
 func TestUpdateUntracked(t *testing.T) {
 	p, logs := newTestProvisioner(&fakeJIT{}, newFakeBackend(true), 1, 1)
-	p.Update("completed", cancelled(5))
+	p.Update(workflow.ActionCompleted, cancelled(5))
 	if !strings.Contains(logs.String(), "update for untracked job ignored") {
 		t.Errorf("untracked update not logged:\n%s", logs.String())
 	}

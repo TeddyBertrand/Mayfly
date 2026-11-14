@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
-	"github.com/TeddyBertrand/Mayfly/internal/receiver"
 	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // Reasons a worker is removed, as logged and returned by Sweep.
@@ -230,7 +230,7 @@ func (r *Reaper) sweepStuck(ctx context.Context, repos []github.Repo, ownerErr e
 			continue
 		}
 		for _, j := range jobs {
-			if !(receiver.Job{Labels: j.Labels}).MatchesLabels(r.opts.Labels) {
+			if !workflow.MatchesLabels(j.Labels, r.opts.Labels) {
 				continue
 			}
 			queued[j.ID] = true

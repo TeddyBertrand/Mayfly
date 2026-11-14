@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // maxWebhookBody caps webhook bodies; workflow_job payloads are tens of KB.
@@ -18,9 +20,9 @@ type Webhook struct {
 	Labels []string
 	Dedupe Deduper
 	// OnQueued hands a job off without blocking; an error means it was not accepted.
-	OnQueued func(Job) error
+	OnQueued func(workflow.Job) error
 	// OnUpdate passes an in_progress or completed job on without blocking.
-	OnUpdate func(action string, job Job)
+	OnUpdate func(action workflow.Action, job workflow.Job)
 	// Instance is reported on /healthz.
 	Instance string
 }
@@ -105,12 +107,12 @@ func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte)
 	log = log.With("action", action, "job_id", job.ID, "repo", job.Repo)
 
 	switch action {
-	case "queued", "in_progress", "completed":
+	case workflow.ActionQueued, workflow.ActionInProgress, workflow.ActionCompleted:
 	default:
 		log.Info("workflow_job action ignored")
 		return http.StatusAccepted
 	}
-	if !job.MatchesLabels(wh.Labels) {
+	if !workflow.MatchesLabels(job.Labels, wh.Labels) {
 		log.Info("workflow_job not for mayfly", "labels", job.Labels)
 		return http.StatusAccepted
 	}
@@ -119,7 +121,7 @@ func dispatch(log *slog.Logger, wh Webhook, event, delivery string, body []byte)
 		return http.StatusAccepted
 	}
 
-	if action != "queued" {
+	if action != workflow.ActionQueued {
 		wh.OnUpdate(action, job)
 		log.Info("workflow_job update handed off", "runner_name", job.RunnerName, "conclusion", job.Conclusion)
 		return http.StatusAccepted

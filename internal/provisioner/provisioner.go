@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
-	"github.com/TeddyBertrand/Mayfly/internal/receiver"
 	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // ErrQueueFull is returned by Enqueue when no queue slot is free.
@@ -35,7 +35,7 @@ type Provisioner struct {
 	backend worker.Backend
 	labels  []string
 	workers int
-	queue   chan receiver.Job
+	queue   chan workflow.Job
 	jobs    *tracker
 	logger  *slog.Logger
 	newName func(int64) (string, error)
@@ -50,7 +50,7 @@ func New(jit JITIssuer, backend worker.Backend, labels []string, workers, queueS
 		backend: backend,
 		labels:  runnerLabels(labels),
 		workers: workers,
-		queue:   make(chan receiver.Job, queueSize),
+		queue:   make(chan workflow.Job, queueSize),
 		jobs:    newTracker(),
 		logger:  logger,
 		newName: github.RunnerName,
@@ -60,7 +60,7 @@ func New(jit JITIssuer, backend worker.Backend, labels []string, workers, queueS
 
 // Enqueue tracks job as waiting and adds it to the queue without blocking, returning ErrQueueFull
 // when it is full. A job that is already tracked is ignored.
-func (p *Provisioner) Enqueue(job receiver.Job) error {
+func (p *Provisioner) Enqueue(job workflow.Job) error {
 	if !p.jobs.add(job.ID) {
 		p.logger.Info("job already tracked, queued event ignored", "job_id", job.ID, "repo", job.Repo)
 		return nil
@@ -76,7 +76,7 @@ func (p *Provisioner) Enqueue(job receiver.Job) error {
 
 // Update applies an in_progress or completed event to the tracked job it concerns, without blocking.
 // Cancelling a job that has not started stops its worker; events for untracked jobs are ignored.
-func (p *Provisioner) Update(action string, job receiver.Job) {
+func (p *Provisioner) Update(action workflow.Action, job workflow.Job) {
 	log := p.logger.With("action", action, "job_id", job.ID, "repo", job.Repo, "runner_name", job.RunnerName)
 	id, from, to, err := p.jobs.update(action, job)
 	switch {
@@ -128,7 +128,7 @@ func (p *Provisioner) Run(ctx context.Context) {
 
 // handle registers a JIT runner for job and runs a worker with it until the worker is gone.
 // It stops early if the job is dropped, and stops tracking the job when it returns.
-func (p *Provisioner) handle(ctx context.Context, job receiver.Job) {
+func (p *Provisioner) handle(ctx context.Context, job workflow.Job) {
 	log := p.logger.With("job_id", job.ID, "repo", job.Repo)
 	start := time.Now()
 	defer p.jobs.remove(job.ID)
