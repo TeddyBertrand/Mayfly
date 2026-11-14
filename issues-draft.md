@@ -139,9 +139,9 @@ Cloud-init installs Docker, applies the worker egress rules, and starts the Comp
 
 ### **done** [ci] Release v0.2.1 (#87)
 Publish v0.2.1 (decision 010) so `main` ships the one-command Azure deploy from #20 (Key Vault secrets, Caddy, cloud-init Compose deploy). Closes M2. Also marks the v0.2.0 release (#83) and the multi-arch image box of #80 done in the draft, and moves the Terraform default `mayfly_version` to `0.2.1`.
-- [ ] `VERSION` is `0.2.1` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.2.1` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.2.1` published for amd64 and arm64
+- [x] `VERSION` is `0.2.1` on `dev` and merged into `main`
+- [x] GitHub Release `v0.2.1` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.2.1` published for amd64 and arm64
 - [x] Terraform default `mayfly_version` is `0.2.1`
 
 ## M2.5 - Refactor
@@ -184,6 +184,14 @@ Every PR should carry the milestone of the issue it implements and show under th
 - [x] `CLAUDE.md` section 6 creates branches with `gh issue develop`
 - [x] `CLAUDE.md` section 7 requires the milestone, explains what "Development" shows, and lists the checks to run after opening
 - [x] The PR for this issue shows the milestone, and the issue lists its branch under "Development"
+
+### **done** [ci] Release v0.2.5 (#105)
+Publish v0.2.5 (decision 010) so `main` ships the M2.5 refactor: shared `workflow` package, reaper decoupled from Docker, config split, the ops listener on port 8081 (decision 018), no magic values, and the test layout (decision 019). Moves the Terraform default `mayfly_version` to `0.2.5` in the same change, because Terraform deploys the working-tree `compose.yaml`, which now points the reaper at port 8081, a port only the 0.2.5 image opens. Also marks the v0.2.1 release (#87) done in the draft, checked against the published release, the image manifest and `mayfly --version`.
+- [ ] `VERSION` is `0.2.5` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.2.5` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.2.5` published for amd64 and arm64
+- [ ] `mayfly --version` in the image prints `0.2.5`
+- [x] Terraform default `mayfly_version` is `0.2.5`
 
 ## M3 - Observability and baseline
 
