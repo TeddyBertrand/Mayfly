@@ -1,12 +1,77 @@
 #cloud-config
-# Host bootstrap for #19: Docker plus the worker egress rules (decision 016). #20 adds the Compose deploy.
+# Host bootstrap: Docker, the worker egress rules (decision 016) and the Compose deploy with secrets from Key Vault (decision 017).
 package_update: true
 package_upgrade: true
 packages:
   - docker.io
   - docker-compose-v2
+  - curl
+  - jq
 
 write_files:
+  - path: /opt/mayfly/compose.yaml
+    content: ${jsonencode(compose_yaml)}
+  - path: /opt/mayfly/settings.env
+    content: ${jsonencode(join("\n", [for k, v in env : "${k}=${v}"]))}
+  - path: /usr/local/sbin/mayfly-deploy
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # Reads the secrets from Key Vault with the VM identity, writes .env and starts the Compose deploy.
+      set -eu
+      DIR=/opt/mayfly
+      SECRETS=/etc/mayfly/secrets
+      VAULT="${key_vault_uri}"
+      OWNER="${admin_username}"
+      IMDS="http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net"
+
+      token() { curl -fsS -H Metadata:true "$IMDS" | jq -er .access_token; }
+      fetch() { curl -fsS -H "Authorization: Bearer $1" "$VAULT""secrets/$2?api-version=7.4" | jq -ej .value; }
+
+      install -d -m 700 -o "$OWNER" -g "$OWNER" "$SECRETS"
+      umask 077
+      # The new role assignment takes minutes to reach Key Vault, so the first reads return 403.
+      i=0
+      until tok="$(token)" && fetch "$tok" webhook-secret >"$SECRETS/webhook_secret" &&
+        fetch "$tok" app-key >"$SECRETS/app_key"; do
+        i=$((i + 1))
+        [ "$i" -lt 60 ] || { echo "mayfly-deploy: cannot read secrets from $VAULT" >&2; exit 1; }
+        sleep 10
+      done
+      chown "$OWNER:$OWNER" "$SECRETS/webhook_secret" "$SECRETS/app_key"
+
+      {
+        cat "$DIR/settings.env"
+        echo
+        echo "MAYFLY_DOMAIN=${domain}"
+        echo "MAYFLY_UID=$(id -u "$OWNER")"
+        echo "DOCKER_GID=$(getent group docker | cut -d: -f3)"
+        echo "MAYFLY_APP_KEY_PATH=$SECRETS/app_key"
+        echo "MAYFLY_WEBHOOK_SECRET_PATH=$SECRETS/webhook_secret"
+      } >"$DIR/.env"
+
+      cd "$DIR"
+      # Pull first: compose.yaml also has a build section, and the host has no source to build from.
+      docker compose --profile cloud pull --quiet
+      docker compose --profile cloud up -d --no-build
+  - path: /etc/systemd/system/mayfly.service
+    content: |
+      [Unit]
+      Description=Mayfly Compose deploy
+      Requires=docker.service
+      Wants=network-online.target
+      After=docker.service mayfly-egress.service network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/sbin/mayfly-deploy
+      ExecStop=/usr/bin/docker compose --project-directory /opt/mayfly --profile cloud down
+      TimeoutStartSec=15min
+      TimeoutStopSec=2min
+
+      [Install]
+      WantedBy=multi-user.target
   - path: /usr/local/sbin/mayfly-egress
     permissions: "0755"
     content: |
@@ -44,3 +109,4 @@ runcmd:
   - usermod -aG docker ${admin_username}
   - systemctl daemon-reload
   - systemctl enable --now docker.service mayfly-egress.service
+  - systemctl enable --now mayfly.service
