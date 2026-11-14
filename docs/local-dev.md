@@ -10,7 +10,7 @@ GitHub ──webhook──► https://<random>.trycloudflare.com ──► cloud
 
 **Why a tunnel:** GitHub pushes webhooks to a public HTTPS URL, and a laptop behind NAT has none. `cloudflared` opens an *outbound* connection to Cloudflare and receives requests for its public URL through it, so no port forwarding or firewall change is needed.
 
-**Shortcut:** once the prerequisites and one-time setup below are done, `make dev` (which runs [scripts/dev.sh](../scripts/dev.sh)) does sections 4 and 5 for you: it builds and starts Mayfly, opens the tunnel, checks `/healthz` through it, and points the App's webhook at the tunnel with `cmd/setwebhook`. Ctrl-C stops both. Logs are kept in a temporary directory it prints. It uses the same `MAYFLY_*` variables, with the App ID and the `~/.config/mayfly/` paths as defaults. The manual steps stay below because they explain what the script does.
+**Shortcut:** once the prerequisites and one-time setup below are done, `make dev` (which runs [scripts/dev.sh](../scripts/dev.sh)) does sections 4 and 5 for you: it builds and starts Mayfly, opens the tunnel, checks through it that mayfly answers (`GET /webhook` returns 405), and points the App's webhook at the tunnel with `cmd/setwebhook`. Ctrl-C stops both. Logs are kept in a temporary directory it prints. It uses the same `MAYFLY_*` variables, with the App ID and the `~/.config/mayfly/` paths as defaults. The manual steps stay below because they explain what the script does.
 
 ## 1. Prerequisites
 
@@ -81,14 +81,15 @@ MAYFLY_WEBHOOK_SECRET_FILE=$HOME/.config/mayfly/webhook-secret \
 ./mayfly
 ```
 
-Expected output (JSON, one line each): `receiver listening` and `provisioner started` with labels `self-hosted, linux, x64, mayfly`.
+Expected output (JSON, one line each): `server listening` twice (`"server":"webhook"` on 8080 and `"server":"ops"` on 8081) and `provisioner started` with labels `self-hosted, linux, x64, mayfly`.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `MAYFLY_APP_ID` | required | GitHub App ID |
 | `MAYFLY_APP_KEY_FILE` | required | Path to the App private key (PEM) |
 | `MAYFLY_WEBHOOK_SECRET_FILE` | required | Path to the webhook secret |
-| `MAYFLY_LISTEN_ADDR` | `:8080` | Receiver address; `127.0.0.1:8080` keeps it off the LAN |
+| `MAYFLY_LISTEN_ADDR` | `:8080` | Webhook address, the only one exposed to GitHub; `127.0.0.1:8080` keeps it off the LAN |
+| `MAYFLY_OPS_ADDR` | `127.0.0.1:8081` | Ops address (`/healthz`, later `/metrics`); never publish it (decision 018) |
 | `MAYFLY_RUNNER_LABELS` | `mayfly` | Labels a job must request to be accepted (decision 007) |
 | `MAYFLY_WORKERS` | `2` | Jobs provisioned in parallel |
 | `MAYFLY_QUEUE_SIZE` | `100` | Jobs waiting before the receiver answers 503 |
@@ -109,7 +110,7 @@ The reaper (`make reaper`, with the same App defaults as `make dev`) reads the A
 | `MAYFLY_WORKER_MAX_AGE` | worker timeout + `15m` | Workers older than this are removed; must exceed `MAYFLY_WORKER_TIMEOUT` |
 | `MAYFLY_REAPER_GRACE` | `2m` | Younger workers skip the GitHub runner check, since their runner may still be booting |
 | `MAYFLY_REAPER_MISSED_PROBES` | `2` | Sweeps in a row `/healthz` must fail before its workers are removed |
-| `MAYFLY_HEALTH_URL` | `http://127.0.0.1:8080/healthz` | Where the reaper asks mayfly for its instance ID (decision 012) |
+| `MAYFLY_HEALTH_URL` | `http://127.0.0.1:8081/healthz` | Where the reaper asks mayfly for its instance ID (decision 012) |
 | `MAYFLY_REAPER_STALE_AFTER` | `10m` | How long a `mayfly-*` registration must stay offline with no container before it is deleted; must outlast an image pull |
 | `MAYFLY_REAPER_STUCK_AFTER` | `10m` | How long a mayfly job may wait in `queued` before it is logged as stuck (decision 013) |
 | `MAYFLY_RUNNER_LABELS` | `mayfly` | Same as the receiver's: which queued jobs count as mayfly's |
@@ -126,7 +127,7 @@ cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8080
 
 It prints a URL like `https://<four-random-words>.trycloudflare.com`. Then:
 
-1. Check it reaches Mayfly: `curl https://<url>/healthz` answers `ok`.
+1. Check it reaches Mayfly: `curl -s -o /dev/null -w '%{http_code}\n' https://<url>/webhook` prints `405`. Only mayfly answers a GET on the webhook that way; the tunnel answers 502 or 530 when it cannot reach it (decision 018).
 2. Point the App's webhook at it, with the same `MAYFLY_APP_ID` and `MAYFLY_APP_KEY_FILE` as Mayfly:
 
    ```bash
