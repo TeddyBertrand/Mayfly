@@ -171,3 +171,14 @@ Each entry records one decision, the options considered and the consequences. En
   - **SSH source address:** a `ssh_allowed_cidr` variable, or auto-detection through an external "what is my IP" service.
 - **Decision:** `denmarkeast`; HTTPS through Caddy (added to the Compose deploy in #20); `iptables` rules in the `DOCKER-USER` and `INPUT` chains for the `mayfly-workers` bridge, applied by a systemd unit from cloud-init in #19; SSH allowed only from `ssh_allowed_cidr`.
 - **Consequences:** The NSG opens 22 (one address), 80 and 443. The HMAC signature still authenticates deliveries; TLS adds confidentiality. Workers can reach the internet but not the host, the VNet, private ranges, link-local addresses (instance metadata) or the Azure wire server (168.63.129.16); DNS keeps working because Docker's embedded resolver forwards from the host namespace. The DNS name stays the same across rebuilds, so the App webhook URL is set once. Firecracker needs a D v5 quota request first. The SSH rule must be updated when the owner's IP changes.
+
+## 017. Deploy secrets in Key Vault, read by the VM's managed identity
+- **Date:** 2026-11-14
+- **Status:** accepted
+- **Context:** #20 starts the Compose deploy from cloud-init, which needs the webhook secret and the GitHub App private key on the host. The host is destroyed and rebuilt often (decision 014), and the secrets must never be committed, stored in Terraform state, or need re-entering for each rebuild.
+- **Options considered:**
+  - **A. Key Vault and managed identity:** a vault created once by `bootstrap.sh` next to the state storage; the owner uploads the secrets with `az keyvault secret set`; Terraform gives the VM a system-assigned identity and the `Key Vault Secrets User` role; cloud-init reads them with a token from the instance metadata service.
+  - **B. Inline in custom_data:** Terraform reads local files into the cloud-init payload. Simplest, but the secrets land in the state and in the VM model, readable by anyone with read access to the VM.
+  - **C. SSH push after apply:** a second command copies the files and starts Compose. Nothing extra in Azure, but `apply` alone no longer yields a working system.
+- **Decision:** A. The vault uses Azure RBAC, 7-day soft delete and no purge protection, and lives in `mayfly-tfstate-rg`, outside the Terraform state, so `destroy` never deletes it.
+- **Consequences:** No secret value passes through Terraform, the state or custom_data. The identity and its role assignment die with the VM. Cloud-init retries for up to 10 minutes because a new role assignment takes minutes to apply. The metadata service hands out tokens for that identity, so blocking 169.254.0.0/16 for workers (decision 016) is now required, not just good practice. Rotating a secret means updating the vault and restarting `mayfly.service` or rebuilding the host. The vault costs a few cents a month.
