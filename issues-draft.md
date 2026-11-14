@@ -169,10 +169,10 @@ Clean up package boundaries before M3 instruments them, so metrics code is writt
 - [x] The webhook listener serves only `/webhook`
 - [ ] Compose stack and Terraform deploy healthy with the new port (Compose checked locally with throwaway credentials; Terraform not run)
 
-### [refacto] No magic values, enforced by linters
-Every number or string with a meaning gets a name, defined once: defaults, timeouts, limits, the `mayfly-` runner prefix, runner statuses, the GitHub API version, and duplicated helpers such as `shortID`. Go `const` covers scalars only, so fixed slices and maps stay unexported `var`s or functions returning copies. Enable `mnd` and `goconst` in `.golangci.yml`. Literals that stay: `0`, `1`, `""` in their usual roles, stdlib idioms such as `strconv.ParseInt(v, 10, 64)`, log and error messages, struct tags, test fixtures. Whether log attribute keys become constants is decided first.
-- [ ] Convention documented in the Go conventions doc
-- [ ] `mnd` and `goconst` enabled, `golangci-lint run` clean
+### **done** [refacto] No magic values, enforced by linters (#94)
+Every number or string with a meaning gets a name, defined once: defaults, timeouts, limits, the `mayfly-` runner prefix, runner statuses, the GitHub API version, and duplicated helpers such as `shortID`. Go `const` covers scalars only, so fixed slices and maps stay unexported `var`s or functions returning copies. Enable `mnd` and `goconst` in `.golangci.yml`. Literals that stay: `0`, `1`, `""` in their usual roles, stdlib idioms such as `strconv.ParseInt(v, 10, 64)`, log and error messages, struct tags, test fixtures. Whether log attribute keys become constants is decided first. Log keys became constants in `internal/logkey`; the rules live in the new `docs/go-conventions.md`.
+- [x] Convention documented in the Go conventions doc
+- [x] `mnd` and `goconst` enabled, `golangci-lint run` clean
 
 ### [docs] Test layout convention
 Go visibility is per package and a package is a directory, so unit tests stay next to the code they test (`foo_test.go` beside `foo.go`) to reach unexported code. End-to-end tests that drive the system from outside, through its exported API or binary, go in a top-level `tests/` directory behind an `e2e` build tag so `go test ./...` stays fast. Readability of the source tree is handled in the editor (e.g. Zed `hidden_files`), not by moving tests.

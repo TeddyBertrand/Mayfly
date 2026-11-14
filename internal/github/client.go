@@ -13,8 +13,24 @@ import (
 	"time"
 )
 
-// tokenRefreshMargin renews a token early so it cannot expire mid-request.
-const tokenRefreshMargin = 5 * time.Minute
+const (
+	// tokenRefreshMargin renews a token early so it cannot expire mid-request.
+	tokenRefreshMargin = 5 * time.Minute
+	// requestTimeout bounds one API call, including reading the response.
+	requestTimeout = 10 * time.Second
+	// maxErrorBody caps how much of an error response is read for its message.
+	maxErrorBody = 64 << 10
+
+	// apiVersion pins the REST API version GitHub answers with.
+	apiVersion = "2022-11-28"
+	// mediaType is the media type GitHub recommends for REST requests.
+	mediaType = "application/vnd.github+json"
+
+	// GitHub's own headers: the API version we send, and the primary rate limit it reports.
+	headerAPIVersion         = "X-GitHub-Api-Version"
+	headerRateLimitRemaining = "X-RateLimit-Remaining"
+	headerRateLimitReset     = "X-RateLimit-Reset"
+)
 
 // Client calls the GitHub REST API as a GitHub App, caching installation tokens.
 type Client struct {
@@ -52,7 +68,7 @@ func (e *APIError) Error() string {
 
 // Temporary reports whether the request may succeed later: server errors and rate limits.
 func (e *APIError) Temporary() bool {
-	return e.Status >= 500 || e.Status == http.StatusTooManyRequests || e.rateLimited
+	return e.Status >= http.StatusInternalServerError || e.Status == http.StatusTooManyRequests || e.rateLimited
 }
 
 // RetryAfter returns how long GitHub asked us to wait, or zero if it did not say.
@@ -78,8 +94,8 @@ func rateLimit(h http.Header, status int, now time.Time) (bool, time.Duration) {
 	if s, err := strconv.Atoi(h.Get("Retry-After")); err == nil && s >= 0 {
 		return status == http.StatusForbidden || status == http.StatusTooManyRequests, time.Duration(s) * time.Second
 	}
-	if h.Get("X-RateLimit-Remaining") == "0" {
-		if reset, err := strconv.ParseInt(h.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+	if h.Get(headerRateLimitRemaining) == "0" {
+		if reset, err := strconv.ParseInt(h.Get(headerRateLimitReset), 10, 64); err == nil {
 			return true, max(0, time.Unix(reset, 0).Sub(now))
 		}
 		return true, 0
@@ -93,7 +109,7 @@ func NewClient(baseURL string, appID int64, key *rsa.PrivateKey) *Client {
 		baseURL: baseURL,
 		appID:   appID,
 		key:     key,
-		http:    &http.Client{Timeout: 10 * time.Second},
+		http:    &http.Client{Timeout: requestTimeout},
 		now:     time.Now,
 		tokens:  make(map[int64]installationToken),
 	}
@@ -145,8 +161,8 @@ func (c *Client) do(ctx context.Context, method, path, bearer string, in, out an
 	if err != nil {
 		return fmt.Errorf("github %s %s: %w", method, path, err)
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Accept", mediaType)
+	req.Header.Set(headerAPIVersion, apiVersion)
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -162,7 +178,7 @@ func (c *Client) do(ctx context.Context, method, path, bearer string, in, out an
 		var e struct {
 			Message string `json:"message"`
 		}
-		_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&e)
+		_ = json.NewDecoder(io.LimitReader(resp.Body, maxErrorBody)).Decode(&e)
 		limited, wait := rateLimit(resp.Header, resp.StatusCode, c.now())
 		return &APIError{Method: method, Path: path, Status: resp.StatusCode, Message: e.Message, rateLimited: limited, wait: wait}
 	}

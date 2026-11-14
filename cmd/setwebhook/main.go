@@ -12,13 +12,17 @@ import (
 
 	"github.com/TeddyBertrand/Mayfly/internal/config"
 	"github.com/TeddyBertrand/Mayfly/internal/github"
+	"github.com/TeddyBertrand/Mayfly/internal/logkey"
 )
+
+// timeout bounds the two GitHub calls, reading and replacing the URL.
+const timeout = 30 * time.Second
 
 // main sets the App webhook URL to os.Args[1] and exits non-zero on failure.
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := run(os.Args[1:], logger); err != nil {
-		logger.Error("set webhook url failed", "err", err)
+		logger.Error("set webhook url failed", logkey.Err, err)
 		os.Exit(1)
 	}
 }
@@ -38,7 +42,7 @@ func run(args []string, logger *slog.Logger) error {
 	}
 	c := github.NewClient(app.APIURL, app.ID, key)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	old, err := c.AppWebhookURL(ctx)
@@ -46,12 +50,12 @@ func run(args []string, logger *slog.Logger) error {
 		return fmt.Errorf("read current url: %w", err)
 	}
 	if old == args[0] {
-		logger.Info("webhook url already set", "url", old)
+		logger.Info("webhook url already set", logkey.URL, old)
 		return nil
 	}
 	if err := c.SetAppWebhookURL(ctx, args[0]); err != nil {
 		return err
 	}
-	logger.Info("webhook url updated", "old", old, "new", args[0])
+	logger.Info("webhook url updated", logkey.Old, old, logkey.New, args[0])
 	return nil
 }

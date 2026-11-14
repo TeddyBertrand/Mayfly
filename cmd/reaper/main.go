@@ -12,18 +12,23 @@ import (
 
 	"github.com/TeddyBertrand/Mayfly/internal/config"
 	"github.com/TeddyBertrand/Mayfly/internal/github"
+	"github.com/TeddyBertrand/Mayfly/internal/logkey"
 	"github.com/TeddyBertrand/Mayfly/internal/reaper"
 	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
 )
 
-// healthTimeout bounds the owner probe so a hung receiver counts as a missed probe instead of stalling the sweep.
-const healthTimeout = 5 * time.Second
+const (
+	// healthTimeout bounds the owner probe so a hung receiver counts as a missed probe instead of stalling the sweep.
+	healthTimeout = 5 * time.Second
+	// component names this process in logs.
+	component = "reaper"
+)
 
 // main loads config and runs the reaper loop until SIGTERM or SIGINT.
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("component", "reaper")
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With(logkey.Component, component)
 	if err := run(logger); err != nil {
-		logger.Error("reaper failed", "err", err)
+		logger.Error("reaper failed", logkey.Err, err)
 		os.Exit(1)
 	}
 }
@@ -52,7 +57,7 @@ func run(logger *slog.Logger) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
-	logger.Info("reaper starting", "interval", cfg.Interval.String(), "max_age", cfg.MaxAge.String(), "health_url", cfg.HealthURL)
+	logger.Info("reaper starting", logkey.Interval, cfg.Interval.String(), logkey.MaxAge, cfg.MaxAge.String(), logkey.HealthURL, cfg.HealthURL)
 	r.Run(ctx, cfg.Interval)
 	logger.Info("reaper stopped")
 	return nil

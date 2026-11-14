@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+// jobStatusQueued is the status of a workflow run or job still waiting for a runner.
+const jobStatusQueued = "queued"
+
 // perPage is GitHub's maximum page size; maxPages caps a listing so a misbehaving API cannot loop forever.
 const (
 	perPage  = 100
@@ -141,7 +144,7 @@ func (c *Client) QueuedJobs(ctx context.Context, installationID int64, repo stri
 			ID int64 `json:"id"`
 		} `json:"workflow_runs"`
 	}
-	runs, err := list(ctx, c, "/repos/"+repo+"/actions/runs?status=queued", token, func(p runsPage) []int64 {
+	runs, err := list(ctx, c, "/repos/"+repo+"/actions/runs?status="+jobStatusQueued, token, func(p runsPage) []int64 {
 		out := make([]int64, 0, len(p.Runs))
 		for _, r := range p.Runs {
 			out = append(out, r.ID)
@@ -172,7 +175,7 @@ func (c *Client) QueuedJobs(ctx context.Context, installationID int64, repo stri
 		}
 		for _, j := range all {
 			// A queued run can hold jobs that already started or finished; only waiting ones count.
-			if j.Status == "queued" {
+			if j.Status == jobStatusQueued {
 				jobs = append(jobs, QueuedJob{ID: j.ID, RunID: j.RunID, Name: j.Name, Labels: j.Labels, CreatedAt: j.CreatedAt, URL: j.URL})
 			}
 		}

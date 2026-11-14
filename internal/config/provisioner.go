@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+// Provisioner defaults.
+const (
+	// DefaultWorkers is how many jobs are provisioned at once.
+	DefaultWorkers = 2
+	// DefaultQueueSize is how many jobs may wait before the receiver answers 503.
+	DefaultQueueSize = 100
+)
+
 // ProvisionerConfig holds the settings of the provisioner component.
 type ProvisionerConfig struct {
 	App           GitHubApp
@@ -33,10 +41,10 @@ func LoadProvisioner(getenv func(string) string, readFile func(string) ([]byte, 
 	if cfg.WorkerTimeout, err = loadWorkerTimeout(getenv); err != nil {
 		return ProvisionerConfig{}, err
 	}
-	if cfg.Workers, err = parsePositiveInt(getenv, "MAYFLY_WORKERS", 2); err != nil {
+	if cfg.Workers, err = parsePositiveInt(getenv, "MAYFLY_WORKERS", DefaultWorkers); err != nil {
 		return ProvisionerConfig{}, err
 	}
-	if cfg.QueueSize, err = parsePositiveInt(getenv, "MAYFLY_QUEUE_SIZE", 100); err != nil {
+	if cfg.QueueSize, err = parsePositiveInt(getenv, "MAYFLY_QUEUE_SIZE", DefaultQueueSize); err != nil {
 		return ProvisionerConfig{}, err
 	}
 	return cfg, nil

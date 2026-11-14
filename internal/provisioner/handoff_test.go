@@ -23,7 +23,7 @@ const queuedBody = `{"action":"queued","workflow_job":{"id":4242,"run_id":1,"nam
 // and checks the webhook still answers 202 quickly.
 func TestWebhookDoesNotWaitOnProvisioning(t *testing.T) {
 	b := newFakeBackend(true)
-	p, _ := newTestProvisioner(&fakeJIT{}, b, 1, 10)
+	p, _ := newTestProvisioner(&fakeJIT{}, b, Options{Workers: 1, QueueSize: 10})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go p.Run(ctx)
