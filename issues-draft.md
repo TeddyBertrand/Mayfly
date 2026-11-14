@@ -117,7 +117,7 @@ Package mayfly and the reaper as container images and run them with one `compose
 - [x] `docker compose down` leaves no worker containers or runner registrations behind
 - [x] Secrets never appear in the image, the Compose file or `docker inspect` environment
 - [x] Images are multi-stage, run as a non-root user, and have a `/healthz` healthcheck
-- [ ] A release pushes `ghcr.io/teddybertrand/mayfly:<version>` for amd64 and arm64
+- [x] A release pushes `ghcr.io/teddybertrand/mayfly:<version>` for amd64 and arm64
 - [x] Local dev guide covers the Compose path next to `make dev`
 
 ### **done** [infra] Terraform: host, network and firewall (#19)
@@ -125,17 +125,24 @@ Provision the server, a firewall allowing only the webhook port and SSH from the
 - [x] `terraform apply` creates the host
 - [x] Worker egress limited as documented
 
-### [ci] Release v0.2.0 (#83)
+### **done** [ci] Release v0.2.0 (#83)
 Publish v0.2.0 (decision 010) so the cloud host can pull a pinned image for #20. Contains the M2 work so far: reaper, retries, worker state machine, concurrency cap, Docker Compose deploy (#80) and the Azure host (#19). #20 follows as v0.2.1.
-- [ ] `VERSION` is `0.2.0` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.2.0` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.2.0` published for amd64 and arm64, and pullable by the host
-- [ ] `mayfly --version` in the image prints `0.2.0`
+- [x] `VERSION` is `0.2.0` on `dev` and merged into `main`
+- [x] GitHub Release `v0.2.0` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.2.0` published for amd64 and arm64, and pullable by the host
+- [x] `mayfly --version` in the image prints `0.2.0`
 
-### [infra] Terraform: bootstrap and secrets
+### **done** [infra] Terraform: bootstrap and secrets (#20)
 Cloud-init installs Docker, applies the worker egress rules, and starts the Compose deploy with a pinned image version. Secrets (webhook secret, App key) are injected without being committed.
-- [ ] From a clean account, `terraform apply` yields a working system
-- [ ] `terraform destroy` removes everything
+- [x] From a clean account, `terraform apply` yields a working system
+- [x] `terraform destroy` removes everything
+
+### **done** [ci] Release v0.2.1 (#87)
+Publish v0.2.1 (decision 010) so `main` ships the one-command Azure deploy from #20 (Key Vault secrets, Caddy, cloud-init Compose deploy). Closes M2. Also marks the v0.2.0 release (#83) and the multi-arch image box of #80 done in the draft, and moves the Terraform default `mayfly_version` to `0.2.1`.
+- [ ] `VERSION` is `0.2.1` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.2.1` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.2.1` published for amd64 and arm64
+- [x] Terraform default `mayfly_version` is `0.2.1`
 
 ## M3 - Observability and baseline
 

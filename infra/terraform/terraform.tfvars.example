@@ -1,5 +1,8 @@
-# Copy to terraform.tfvars (gitignored). Only ssh_allowed_cidr is required.
+# Copy to terraform.tfvars (gitignored). Secrets are not set here: they live in Key Vault (decision 017).
 ssh_allowed_cidr = "203.0.113.7/32"
+app_id           = "123456"
+
+# mayfly_version = "0.2.0"
 
 # Benchmark days: a 4 GB size, then back to the free default.
 # vm_size = "Standard_B2als_v2"
