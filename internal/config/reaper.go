@@ -8,36 +8,42 @@ import (
 // maxAgeMargin is added to the worker timeout for the default max age, so the reaper never races the backend's own timeout.
 const maxAgeMargin = 15 * time.Minute
 
-// ReaperConfig holds the settings of the reaper. It shares the GitHub App and Docker settings with the provisioner.
+// ReaperConfig holds the settings of the reaper: the shared GitHub App and Docker settings plus its own.
 type ReaperConfig struct {
-	ProvisionerConfig
-	Interval     time.Duration
-	MaxAge       time.Duration
-	Grace        time.Duration
-	MissedProbes int
-	HealthURL    string
-	StaleAfter   time.Duration
-	StuckAfter   time.Duration
-	RunnerLabels []string
+	App    GitHubApp
+	Docker Docker
+	// WorkerTimeout is read only to check that MaxAge outlasts it.
+	WorkerTimeout time.Duration
+	Interval      time.Duration
+	MaxAge        time.Duration
+	Grace         time.Duration
+	MissedProbes  int
+	HealthURL     string
+	StaleAfter    time.Duration
+	StuckAfter    time.Duration
+	RunnerLabels  []string
 }
 
 // LoadReaper reads the reaper settings through getenv and readFile. MAYFLY_WORKER_MAX_AGE must exceed
 // MAYFLY_WORKER_TIMEOUT, or the reaper would kill jobs the backend still allows to run.
 func LoadReaper(getenv func(string) string, readFile func(string) ([]byte, error)) (ReaperConfig, error) {
-	p, err := LoadProvisioner(getenv, readFile)
+	app, err := LoadGitHubApp(getenv, readFile)
 	if err != nil {
 		return ReaperConfig{}, err
 	}
-	cfg := ReaperConfig{ProvisionerConfig: p, HealthURL: "http://127.0.0.1:8080/healthz"}
+	cfg := ReaperConfig{App: app, Docker: loadDocker(getenv), HealthURL: "http://127.0.0.1:8080/healthz"}
 
+	if cfg.WorkerTimeout, err = loadWorkerTimeout(getenv); err != nil {
+		return ReaperConfig{}, err
+	}
 	if cfg.Interval, err = parseDuration(getenv, "MAYFLY_REAPER_INTERVAL", time.Minute); err != nil {
 		return ReaperConfig{}, err
 	}
-	if cfg.MaxAge, err = parseDuration(getenv, "MAYFLY_WORKER_MAX_AGE", p.WorkerTimeout+maxAgeMargin); err != nil {
+	if cfg.MaxAge, err = parseDuration(getenv, "MAYFLY_WORKER_MAX_AGE", cfg.WorkerTimeout+maxAgeMargin); err != nil {
 		return ReaperConfig{}, err
 	}
-	if cfg.MaxAge <= p.WorkerTimeout {
-		return ReaperConfig{}, fmt.Errorf("MAYFLY_WORKER_MAX_AGE: must be longer than MAYFLY_WORKER_TIMEOUT (%s), got %s", p.WorkerTimeout, cfg.MaxAge)
+	if cfg.MaxAge <= cfg.WorkerTimeout {
+		return ReaperConfig{}, fmt.Errorf("MAYFLY_WORKER_MAX_AGE: must be longer than MAYFLY_WORKER_TIMEOUT (%s), got %s", cfg.WorkerTimeout, cfg.MaxAge)
 	}
 	if cfg.Grace, err = parseDuration(getenv, "MAYFLY_REAPER_GRACE", 2*time.Minute); err != nil {
 		return ReaperConfig{}, err

@@ -85,7 +85,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	key, err := github.ParsePrivateKey(pcfg.AppKey)
+	key, err := github.ParsePrivateKey(pcfg.App.Key)
 	if err != nil {
 		return err
 	}
@@ -96,9 +96,14 @@ func run(logger *slog.Logger) error {
 	}
 	logger = logger.With("instance", instance)
 
-	gh := github.NewClient(pcfg.GitHubAPIURL, pcfg.AppID, key)
-	backend := docker.New(pcfg.DockerSocket, pcfg.WorkerImage, pcfg.WorkerNetwork, pcfg.WorkerTimeout, instance, logger)
-	prov := provisioner.New(gh, backend, rcfg.RunnerLabels, pcfg.Workers, pcfg.QueueSize, logger)
+	gh := github.NewClient(pcfg.App.APIURL, pcfg.App.ID, key)
+	backend := docker.New(docker.Options{
+		Socket: pcfg.Docker.Socket, Image: pcfg.WorkerImage, Network: pcfg.WorkerNetwork,
+		Timeout: pcfg.WorkerTimeout, Owner: instance,
+	}, logger)
+	prov := provisioner.New(gh, backend, provisioner.Options{
+		Labels: rcfg.RunnerLabels, Workers: pcfg.Workers, QueueSize: pcfg.QueueSize,
+	}, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()

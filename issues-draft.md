@@ -157,11 +157,11 @@ Clean up package boundaries before M3 instruments them, so metrics code is writt
 `reaper.Workers` returns `docker.Worker`, so the reaper depends on one concrete backend. Move the worker inventory type and its list/remove interface into `internal/worker`, implemented by `worker/docker`, so a Firecracker backend (M7) plugs in without touching the reaper. The type is `worker.Info` and the interface `worker.Inventory`, next to `worker.Backend`.
 - [x] `internal/reaper` does not import `internal/worker/docker`
 
-### [refacto] Split config into shared GitHub App and Docker settings
-`ReaperConfig` embeds the whole `ProvisionerConfig`, so the reaper loads settings it never uses, and `config` imports `github` and `worker/docker` for defaults. Introduce shared `GitHubApp` and `Docker` sub-structs that each process composes, and give `provisioner.New` and `docker.New` option structs instead of long positional arguments.
-- [ ] The reaper only loads the settings it uses
-- [ ] `internal/config` imports no other internal package
-- [ ] No constructor takes two adjacent arguments of the same type
+### **done** [refacto] Split config into shared GitHub App and Docker settings (#92)
+`ReaperConfig` embeds the whole `ProvisionerConfig`, so the reaper loads settings it never uses, and `config` imports `github` and `worker/docker` for defaults. Introduce shared `GitHubApp` and `Docker` sub-structs that each process composes, and give `provisioner.New` and `docker.New` option structs instead of long positional arguments. The shared defaults now live in `config`, and `setwebhook` loads only `LoadGitHubApp`.
+- [x] The reaper only loads the settings it uses
+- [x] `internal/config` imports no other internal package
+- [x] No constructor takes two adjacent arguments of the same type
 
 ### [refacto] Serve `/healthz` from a separate ops server
 `/healthz` shares the public webhook router, and `receiver.Handoff` and `receiver.Webhook` repeat the same fields. Move `/healthz` to a small ops server on its own listener, which M3 reuses for `/metrics`. Behaviour change: new port, Compose healthcheck and reaper `HealthURL` updated. Record the choice in `docs/design-decisions.md`.

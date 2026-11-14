@@ -4,9 +4,6 @@ import (
 	"reflect"
 	"testing"
 	"time"
-
-	"github.com/TeddyBertrand/Mayfly/internal/github"
-	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
 )
 
 // TestLoadProvisioner checks defaults, overrides and rejection of missing or invalid values.
@@ -34,9 +31,9 @@ func TestLoadProvisioner(t *testing.T) {
 			name: "defaults",
 			env:  base,
 			want: ProvisionerConfig{
-				AppID: 5714458, AppKey: []byte("PEM-BYTES"), GitHubAPIURL: github.DefaultBaseURL,
-				DockerSocket: docker.DefaultSocket, WorkerImage: docker.DefaultImage,
-				WorkerTimeout: docker.DefaultTimeout, Workers: 2, QueueSize: 100,
+				App:    GitHubApp{ID: 5714458, Key: []byte("PEM-BYTES"), APIURL: DefaultGitHubAPIURL},
+				Docker: Docker{Socket: DefaultDockerSocket}, WorkerImage: DefaultWorkerImage,
+				WorkerTimeout: DefaultWorkerTimeout, Workers: 2, QueueSize: 100,
 			},
 		},
 		{
@@ -47,8 +44,8 @@ func TestLoadProvisioner(t *testing.T) {
 				"MAYFLY_WORKER_TIMEOUT": "1h", "MAYFLY_WORKERS": "4", "MAYFLY_QUEUE_SIZE": "10",
 			}),
 			want: ProvisionerConfig{
-				AppID: 5714458, AppKey: []byte("PEM-BYTES"), GitHubAPIURL: "http://gh.local",
-				DockerSocket: "/tmp/d.sock", WorkerImage: "img:1", WorkerNetwork: "mayfly-workers",
+				App:    GitHubApp{ID: 5714458, Key: []byte("PEM-BYTES"), APIURL: "http://gh.local"},
+				Docker: Docker{Socket: "/tmp/d.sock"}, WorkerImage: "img:1", WorkerNetwork: "mayfly-workers",
 				WorkerTimeout: time.Hour, Workers: 4, QueueSize: 10,
 			},
 		},

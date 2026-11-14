@@ -42,15 +42,24 @@ type Provisioner struct {
 	retry   retry.Policy
 }
 
-// New returns a Provisioner with workers goroutines and room for queueSize waiting jobs.
-// Runners register with the self-hosted defaults plus labels.
-func New(jit JITIssuer, backend worker.Backend, labels []string, workers, queueSize int, logger *slog.Logger) *Provisioner {
+// Options configure a Provisioner.
+type Options struct {
+	// Labels are added to the self-hosted defaults every runner registers with.
+	Labels []string
+	// Workers is how many jobs are provisioned at once.
+	Workers int
+	// QueueSize is how many jobs may wait for a free worker.
+	QueueSize int
+}
+
+// New returns a Provisioner that registers runners through jit and runs them on backend, as configured by opts.
+func New(jit JITIssuer, backend worker.Backend, opts Options, logger *slog.Logger) *Provisioner {
 	return &Provisioner{
 		jit:     jit,
 		backend: backend,
-		labels:  runnerLabels(labels),
-		workers: workers,
-		queue:   make(chan workflow.Job, queueSize),
+		labels:  runnerLabels(opts.Labels),
+		workers: opts.Workers,
+		queue:   make(chan workflow.Job, opts.QueueSize),
 		jobs:    newTracker(),
 		logger:  logger,
 		newName: github.RunnerName,

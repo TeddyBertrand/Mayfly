@@ -34,14 +34,14 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	key, err := github.ParsePrivateKey(cfg.AppKey)
+	key, err := github.ParsePrivateKey(cfg.App.Key)
 	if err != nil {
 		return err
 	}
 
 	r := reaper.New(
-		docker.NewInventory(cfg.DockerSocket),
-		github.NewClient(cfg.GitHubAPIURL, cfg.AppID, key),
+		docker.NewInventory(cfg.Docker.Socket),
+		github.NewClient(cfg.App.APIURL, cfg.App.ID, key),
 		reaper.HealthOwner(&http.Client{Timeout: healthTimeout}, cfg.HealthURL),
 		reaper.Options{
 			MaxAge: cfg.MaxAge, Grace: cfg.Grace, MissedProbes: cfg.MissedProbes,

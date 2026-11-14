@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TeddyBertrand/Mayfly/internal/config"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
 )
 
@@ -17,11 +18,11 @@ const smallImage = "busybox:1.36"
 // realBackend returns a Backend on the local Docker daemon, or skips the test when none answers.
 func realBackend(t *testing.T, image string, cmd []string, timeout time.Duration) (*Backend, *bytes.Buffer) {
 	t.Helper()
-	b := New(DefaultSocket, image, "", timeout, "test-instance", nil)
+	b := New(Options{Socket: config.DefaultDockerSocket, Image: image, Timeout: timeout, Owner: "test-instance"}, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := b.eng.call(ctx, "ping", "GET", "/_ping", nil, nil, 200); err != nil {
-		t.Skipf("no Docker daemon at %s: %v", DefaultSocket, err)
+		t.Skipf("no Docker daemon at %s: %v", config.DefaultDockerSocket, err)
 	}
 	var logs bytes.Buffer
 	b.logger = slog.New(slog.NewJSONHandler(&logs, nil))
@@ -91,7 +92,7 @@ func TestDockerRunnerImage(t *testing.T) {
 	if os.Getenv("MAYFLY_DOCKER_TEST") != "1" {
 		t.Skip("set MAYFLY_DOCKER_TEST=1 to run the real runner image")
 	}
-	b, logs := realBackend(t, DefaultImage, nil, 5*time.Minute)
+	b, logs := realBackend(t, config.DefaultWorkerImage, nil, 5*time.Minute)
 	spec := uniqueSpec(t)
 	if err := b.Run(context.Background(), spec); err != nil {
 		t.Fatalf("run: %v\n%s", err, logs.String())
