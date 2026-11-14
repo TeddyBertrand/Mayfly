@@ -21,7 +21,7 @@ func TestLoadReaper(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Interval != time.Minute || got.MaxAge != 6*time.Hour+15*time.Minute || got.Grace != 2*time.Minute ||
-		got.MissedProbes != 2 || got.HealthURL != "http://127.0.0.1:8080/healthz" || got.AppID != 1 ||
+		got.MissedProbes != 2 || got.HealthURL != "http://127.0.0.1:8080/healthz" || got.App.ID != 1 || got.Docker.Socket != DefaultDockerSocket ||
 		got.StaleAfter != 10*time.Minute || got.StuckAfter != 10*time.Minute || len(got.RunnerLabels) != 1 || got.RunnerLabels[0] != "mayfly" {
 		t.Errorf("defaults = %+v", got)
 	}
@@ -52,5 +52,22 @@ func TestLoadReaper(t *testing.T) {
 		if _, err := LoadReaper(env(extra), files); err == nil {
 			t.Errorf("%s: want an error", name)
 		}
+	}
+}
+
+// TestLoadReaperIgnoresProvisionerSettings checks that a setting only the provisioner reads cannot break the reaper.
+func TestLoadReaperIgnoresProvisionerSettings(t *testing.T) {
+	files := fakeFS(map[string]string{"/key.pem": "PEM"})
+	env := map[string]string{
+		"MAYFLY_APP_ID": "1", "MAYFLY_APP_KEY_FILE": "/key.pem",
+		"MAYFLY_WORKERS": "zero", "MAYFLY_QUEUE_SIZE": "-1",
+	}
+	getenv := func(k string) string { return env[k] }
+
+	if _, err := LoadProvisioner(getenv, files); err == nil {
+		t.Fatal("LoadProvisioner accepted invalid provisioner settings, so this test proves nothing")
+	}
+	if _, err := LoadReaper(getenv, files); err != nil {
+		t.Errorf("LoadReaper failed on provisioner-only settings: %v", err)
 	}
 }

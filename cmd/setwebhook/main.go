@@ -28,15 +28,15 @@ func run(args []string, logger *slog.Logger) error {
 	if len(args) != 1 {
 		return errors.New("usage: setwebhook https://<host>/webhook")
 	}
-	cfg, err := config.LoadProvisioner(os.Getenv, os.ReadFile)
+	app, err := config.LoadGitHubApp(os.Getenv, os.ReadFile)
 	if err != nil {
 		return err
 	}
-	key, err := github.ParsePrivateKey(cfg.AppKey)
+	key, err := github.ParsePrivateKey(app.Key)
 	if err != nil {
 		return err
 	}
-	c := github.NewClient(cfg.GitHubAPIURL, cfg.AppID, key)
+	c := github.NewClient(app.APIURL, app.ID, key)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

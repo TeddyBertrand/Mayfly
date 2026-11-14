@@ -13,13 +13,6 @@ import (
 )
 
 const (
-	// DefaultSocket is where the Docker daemon listens on Linux.
-	DefaultSocket = "/var/run/docker.sock"
-	// DefaultImage is the official runner image, pinned to an exact release.
-	DefaultImage = "ghcr.io/actions/actions-runner:2.338.2"
-	// DefaultTimeout matches GitHub's maximum job duration.
-	DefaultTimeout = 6 * time.Hour
-
 	// LabelJobID and LabelRunnerName tag every worker container so the reaper can find them.
 	LabelJobID      = "mayfly.job_id"
 	LabelRunnerName = "mayfly.runner_name"

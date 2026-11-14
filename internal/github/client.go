@@ -13,12 +13,8 @@ import (
 	"time"
 )
 
-const (
-	// DefaultBaseURL is the public GitHub REST API.
-	DefaultBaseURL = "https://api.github.com"
-	// tokenRefreshMargin renews a token early so it cannot expire mid-request.
-	tokenRefreshMargin = 5 * time.Minute
-)
+// tokenRefreshMargin renews a token early so it cannot expire mid-request.
+const tokenRefreshMargin = 5 * time.Minute
 
 // Client calls the GitHub REST API as a GitHub App, caching installation tokens.
 type Client struct {
