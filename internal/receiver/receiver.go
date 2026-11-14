@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/config"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // dedupeTTL matches GitHub's three-day window for redelivering a webhook.
@@ -18,8 +19,8 @@ const dedupeTTL = 72 * time.Hour
 
 // Handoff is where the receiver sends accepted jobs: new ones to OnQueued, later actions to OnUpdate.
 type Handoff struct {
-	OnQueued func(Job) error
-	OnUpdate func(action string, job Job)
+	OnQueued func(workflow.Job) error
+	OnUpdate func(action workflow.Action, job workflow.Job)
 	// Instance is this process's instance ID, reported on /healthz so the reaper can tell who is alive.
 	Instance string
 }

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/TeddyBertrand/Mayfly/internal/receiver"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // State is where a job's worker is in its lifecycle. docs/state-machine.md has the diagram.
@@ -55,8 +55,8 @@ func canTransition(from, to State) bool {
 
 // target returns the state a workflow_job action asks for, given the current state.
 // A running job always ends as Done, even when cancelled, because its runner exits by itself.
-func target(action, conclusion string, cur State) State {
-	if action == "in_progress" {
+func target(action workflow.Action, conclusion string, cur State) State {
+	if action == workflow.ActionInProgress {
 		return Running
 	}
 	if cur == Running || conclusion != "cancelled" {
@@ -141,7 +141,7 @@ func (t *tracker) ready(id int64, runner string) error {
 // update applies an in_progress or completed event to the entry it concerns, matched by runner name
 // and then by job ID, since a runner may pick up a different job than the one it was created for.
 // Dropping an entry cancels its worker. It returns the entry's job ID and its old and new state.
-func (t *tracker) update(action string, job receiver.Job) (id int64, from, to State, err error) {
+func (t *tracker) update(action workflow.Action, job workflow.Job) (id int64, from, to State, err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	id, e := t.find(job)
@@ -160,7 +160,7 @@ func (t *tracker) update(action string, job receiver.Job) (id int64, from, to St
 }
 
 // find returns the entry whose runner is job.RunnerName, or else the entry for job.ID. Callers hold mu.
-func (t *tracker) find(job receiver.Job) (int64, *entry) {
+func (t *tracker) find(job workflow.Job) (int64, *entry) {
 	if job.RunnerName != "" {
 		for id, e := range t.jobs {
 			if e.runner == job.RunnerName {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/config"
+	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
 
 // discardLogger returns a logger that drops all output.
@@ -22,16 +23,16 @@ func discardLogger() *slog.Logger {
 }
 
 // testWebhook returns a Webhook with the "mayfly" label, a fresh deduper, and onQueued (or a no-op).
-func testWebhook(secret []byte, onQueued func(Job)) Webhook {
+func testWebhook(secret []byte, onQueued func(workflow.Job)) Webhook {
 	if onQueued == nil {
-		onQueued = func(Job) {}
+		onQueued = func(workflow.Job) {}
 	}
 	return Webhook{
 		Secret:   secret,
 		Labels:   []string{"mayfly"},
 		Dedupe:   NewMemoryDeduper(time.Hour),
-		OnQueued: func(j Job) error { onQueued(j); return nil },
-		OnUpdate: func(string, Job) {},
+		OnQueued: func(j workflow.Job) error { onQueued(j); return nil },
+		OnUpdate: func(workflow.Action, workflow.Job) {},
 	}
 }
 
@@ -41,7 +42,7 @@ func TestWebhookHandoffFailure(t *testing.T) {
 	wh := testWebhook(secret, nil)
 	fail := true
 	accepted := 0
-	wh.OnQueued = func(Job) error {
+	wh.OnQueued = func(workflow.Job) error {
 		if fail {
 			return errors.New("queue full")
 		}
@@ -108,10 +109,10 @@ func TestWebhookDispatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var jobs []Job
+			var jobs []workflow.Job
 			updates := 0
-			wh := testWebhook(secret, func(j Job) { jobs = append(jobs, j) })
-			wh.OnUpdate = func(string, Job) { updates++ }
+			wh := testWebhook(secret, func(j workflow.Job) { jobs = append(jobs, j) })
+			wh.OnUpdate = func(workflow.Action, workflow.Job) { updates++ }
 			h := NewHandler(discardLogger(), wh)
 			if got := postSigned(h, secret, tt.event, tt.delivery, tt.body); got != tt.wantStatus {
 				t.Errorf("status = %d, want %d", got, tt.wantStatus)
@@ -129,8 +130,8 @@ func TestWebhookDispatch(t *testing.T) {
 // TestWebhookSameDeliveryTwice checks that a redelivered queued job is handed off once.
 func TestWebhookSameDeliveryTwice(t *testing.T) {
 	secret := []byte("test-secret")
-	var jobs []Job
-	h := NewHandler(discardLogger(), testWebhook(secret, func(j Job) { jobs = append(jobs, j) }))
+	var jobs []workflow.Job
+	h := NewHandler(discardLogger(), testWebhook(secret, func(j workflow.Job) { jobs = append(jobs, j) }))
 
 	for i := range 2 {
 		if got := postSigned(h, secret, "workflow_job", "same-delivery", queuedPayload); got != http.StatusAccepted {
@@ -217,7 +218,7 @@ func TestServeShutsDownOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- serve(ctx, ln, cfg, discardLogger(), Handoff{OnQueued: func(Job) error { return nil }, OnUpdate: func(string, Job) {}})
+		done <- serve(ctx, ln, cfg, discardLogger(), Handoff{OnQueued: func(workflow.Job) error { return nil }, OnUpdate: func(workflow.Action, workflow.Job) {}})
 	}()
 
 	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
