@@ -69,6 +69,25 @@ services:
       mayfly:
         condition: service_healthy
 
+  # Public HTTPS entry on the cloud host (decision 016); Let's Encrypt certificate for MAYFLY_DOMAIN.
+  # Not `:?`: Compose interpolates every service, even ones whose profile is off.
+  caddy:
+    profiles: [cloud]
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    command: ["caddy", "reverse-proxy", "--from", "${MAYFLY_DOMAIN:-}", "--to", "mayfly:8080"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+    depends_on:
+      mayfly:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+
 secrets:
   app_key:
     file: ${MAYFLY_APP_KEY_PATH:?set MAYFLY_APP_KEY_PATH in .env}
