@@ -94,7 +94,7 @@ func (s *syncBuffer) String() string {
 // newTestProvisioner returns a Provisioner over the fakes and a buffer with its JSON logs.
 func newTestProvisioner(jit *fakeJIT, b *fakeBackend, workers, queue int) (*Provisioner, *syncBuffer) {
 	logs := &syncBuffer{}
-	p := New(jit, b, []string{"mayfly"}, workers, queue, slog.New(slog.NewJSONHandler(logs, nil)))
+	p := New(jit, b, Options{Labels: []string{"mayfly"}, Workers: workers, QueueSize: queue}, slog.New(slog.NewJSONHandler(logs, nil)))
 	p.retry = retry.Policy{Attempts: 3, Base: time.Millisecond, Max: 5 * time.Millisecond}
 	return p, logs
 }
@@ -231,7 +231,7 @@ func TestCapUnderBurst(t *testing.T) {
 		finished: make(chan struct{}, burst),
 		release:  make(chan struct{}),
 	}
-	p := New(&fakeJIT{}, b, nil, workers, queueSize, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	p := New(&fakeJIT{}, b, Options{Workers: workers, QueueSize: queueSize}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go p.Run(ctx)
