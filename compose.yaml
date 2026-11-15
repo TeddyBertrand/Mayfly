@@ -62,6 +62,71 @@ services:
       mayfly:
         condition: service_healthy
 
+  # Scrapes mayfly:8081 and reaper:8082 over the Compose network; never published (decision 021).
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      # Caps disk use on the 32 GB OS disk, which also holds worker images.
+      - --storage.tsdb.retention.size=1GB
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Dashboards from the repo; loopback only, reached on the VM through an SSH tunnel (decision 021).
+  grafana:
+    image: grafana/grafana:13.3.0
+    restart: unless-stopped
+    environment:
+      # Anonymous read-only access and no login form: safe only because the port is on loopback.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: ${GRAFANA_ROLE:-Viewer}
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/mayfly.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      # Keep it on loopback: anyone who reaches this port sees the dashboards without logging in.
+      - "${GRAFANA_PUBLISH:-127.0.0.1:3000}:3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    # About 230 MB in use plus cache when idle; headroom for heavier dashboards.
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
   tunnel:
     profiles: [tunnel]
     image: cloudflare/cloudflared:2025.11.1
@@ -91,6 +156,8 @@ services:
 
 volumes:
   caddy_data:
+  prometheus_data:
+  grafana_data:
 
 secrets:
   app_key:
