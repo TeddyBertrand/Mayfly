@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
@@ -70,6 +71,15 @@ type entry struct {
 	state  State
 	runner string
 	cancel context.CancelFunc
+	// accepted is when Enqueue took the job, the start of its boot time.
+	accepted time.Time
+}
+
+// change is what tracker.update did to one entry.
+type change struct {
+	ID       int64
+	From, To State
+	Accepted time.Time
 }
 
 // tracker holds the state of every job this process is handling, in memory only.
@@ -83,14 +93,14 @@ func newTracker() *tracker {
 	return &tracker{jobs: map[int64]*entry{}}
 }
 
-// add starts tracking id as Waiting, reporting false if it is already tracked.
-func (t *tracker) add(id int64) bool {
+// add starts tracking id as Waiting, accepted at the given time, reporting false if it is already tracked.
+func (t *tracker) add(id int64, accepted time.Time) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if _, ok := t.jobs[id]; ok {
 		return false
 	}
-	t.jobs[id] = &entry{state: Waiting}
+	t.jobs[id] = &entry{state: Waiting, accepted: accepted}
 	return true
 }
 
@@ -140,23 +150,22 @@ func (t *tracker) ready(id int64, runner string) error {
 
 // update applies an in_progress or completed event to the entry it concerns, matched by runner name
 // and then by job ID, since a runner may pick up a different job than the one it was created for.
-// Dropping an entry cancels its worker. It returns the entry's job ID and its old and new state.
-func (t *tracker) update(action workflow.Action, job workflow.Job) (id int64, from, to State, err error) {
+// Dropping an entry cancels its worker. The change names the entry's job ID even when err is set.
+func (t *tracker) update(action workflow.Action, job workflow.Job) (change, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	id, e := t.find(job)
 	if e == nil {
-		return job.ID, 0, 0, errUntracked
+		return change{ID: job.ID}, errUntracked
 	}
-	from = e.state
-	to = target(action, job.Conclusion, from)
-	if _, err := t.move(id, to); err != nil {
-		return id, from, to, err
+	c := change{ID: id, From: e.state, To: target(action, job.Conclusion, e.state), Accepted: e.accepted}
+	if _, err := t.move(id, c.To); err != nil {
+		return c, err
 	}
-	if to == Dropped && e.cancel != nil {
+	if c.To == Dropped && e.cancel != nil {
 		e.cancel()
 	}
-	return id, from, to, nil
+	return c, nil
 }
 
 // find returns the entry whose runner is job.RunnerName, or else the entry for job.ID. Callers hold mu.

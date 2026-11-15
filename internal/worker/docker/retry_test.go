@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/TeddyBertrand/Mayfly/internal/retry"
 )
 
@@ -15,26 +17,30 @@ import (
 // cleaned up, and the job wait itself is never retried.
 func TestRunRetriesStart(t *testing.T) {
 	tests := []struct {
-		name      string
-		setup     func(*fakeEngine)
-		wantErr   string
-		wantCalls []string
+		name        string
+		setup       func(*fakeEngine)
+		wantErr     string
+		wantCalls   []string
+		wantRetries float64
 	}{
 		{
-			name:      "create recovers",
-			setup:     func(f *fakeEngine) { f.createFails = 2 },
-			wantCalls: []string{"inspect-image", "create", "inspect-image", "create", "inspect-image", "create", "wait", "start", "remove"},
+			name:        "create recovers",
+			setup:       func(f *fakeEngine) { f.createFails = 2 },
+			wantCalls:   []string{"inspect-image", "create", "inspect-image", "create", "inspect-image", "create", "wait", "start", "remove"},
+			wantRetries: 2,
 		},
 		{
-			name:      "start recovers, failed container removed",
-			setup:     func(f *fakeEngine) { f.startFails = 1 },
-			wantCalls: []string{"inspect-image", "create", "wait", "start", "remove", "inspect-image", "create", "wait", "start", "remove"},
+			name:        "start recovers, failed container removed",
+			setup:       func(f *fakeEngine) { f.startFails = 1 },
+			wantCalls:   []string{"inspect-image", "create", "wait", "start", "remove", "inspect-image", "create", "wait", "start", "remove"},
+			wantRetries: 1,
 		},
 		{
-			name:      "gives up",
-			setup:     func(f *fakeEngine) { f.createFails = 10 },
-			wantErr:   "gave up after 3 attempts: docker create: 503",
-			wantCalls: []string{"inspect-image", "create", "inspect-image", "create", "inspect-image", "create"},
+			name:        "gives up",
+			setup:       func(f *fakeEngine) { f.createFails = 10 },
+			wantErr:     "gave up after 3 attempts: docker create: 503",
+			wantCalls:   []string{"inspect-image", "create", "inspect-image", "create", "inspect-image", "create"},
+			wantRetries: 2,
 		},
 		{
 			name:      "client error not retried",
@@ -59,6 +65,9 @@ func TestRunRetriesStart(t *testing.T) {
 			}
 			if got := f.callList(); !reflect.DeepEqual(got, tt.wantCalls) {
 				t.Errorf("calls = %v, want %v", got, tt.wantCalls)
+			}
+			if got := testutil.ToFloat64(b.retries); got != tt.wantRetries {
+				t.Errorf("retries metric = %v, want %v", got, tt.wantRetries)
 			}
 			if strings.Contains(logs.String(), fakeJIT) {
 				t.Errorf("logs leak the JIT config:\n%s", logs.String())

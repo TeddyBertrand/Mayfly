@@ -8,7 +8,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/TeddyBertrand/Mayfly/internal/logkey"
+	"github.com/TeddyBertrand/Mayfly/internal/metrics"
 	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
 )
@@ -44,6 +47,7 @@ type Backend struct {
 	logger  *slog.Logger
 	retry   retry.Policy
 	owner   string
+	retries prometheus.Counter
 }
 
 var _ worker.Backend = (*Backend)(nil)
@@ -60,13 +64,20 @@ type Options struct {
 	Timeout time.Duration
 	// Owner is the instance ID of this process, set on every container so the reaper can spot orphans.
 	Owner string
+	// Metrics receives worker start retries; nil uses unregistered ones.
+	Metrics *metrics.Mayfly
 }
 
 // New returns a Backend that runs workers as configured by opts.
 func New(opts Options, logger *slog.Logger) *Backend {
+	m := opts.Metrics
+	if m == nil {
+		m = metrics.NewMayfly(nil)
+	}
 	return &Backend{
 		eng: newSocketEngine(opts.Socket), image: opts.Image, network: opts.Network, cmd: []string{runnerCommand},
 		timeout: opts.Timeout, logger: logger, retry: retry.Default, owner: opts.Owner,
+		retries: m.Retries.WithLabelValues(metrics.OpWorkerStart),
 	}
 }
 
@@ -84,6 +95,7 @@ func (b *Backend) Run(ctx context.Context, spec worker.Spec) error {
 		id, waitDone, stopWait, err = b.start(ctx, spec, log)
 		return err
 	}, func(attempt int, wait time.Duration, err error) {
+		b.retries.Inc()
 		log.Warn("worker start failed, retrying", logkey.Attempt, attempt, logkey.Wait, wait.String(), logkey.Err, err)
 	})
 	if err != nil {
