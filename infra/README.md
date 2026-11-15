@@ -50,13 +50,13 @@ ssh -L 3000:localhost:3000 "$(terraform output -raw ssh | cut -d' ' -f2)"   # Gr
 terraform destroy                                # when done; only the state storage and the vault remain
 ```
 
-Prometheus and Grafana run on the host with the rest of the deploy; their config in `infra/observability/` is shipped by cloud-init, gzipped (decision 021). Metrics are lost on `terraform destroy`, so take screenshots and benchmark numbers first. Mayfly's own metrics need an image with #21 (after 0.2.5): with an older `mayfly_version`, the dashboard shows mayfly and the reaper as down.
+Prometheus and Grafana run on the host with the rest of the deploy; their config in `infra/observability/` is shipped by cloud-init, gzipped (decision 021). Metrics are lost on `terraform destroy`, so take screenshots and benchmark numbers first. Mayfly's own metrics need image 0.2.6 or later (#21): with an older `mayfly_version`, the dashboard shows mayfly and the reaper as down.
 
 Each rebuild has a new SSH host key under the same name, so `ssh` warns that the key changed. Remove the old one with `ssh-keygen -R "$(terraform output -raw fqdn)"`.
 
 `make dev` points the App webhook back at your tunnel; run `go run ./cmd/setwebhook "$(terraform output -raw webhook_url)"` to send it to the host again.
 
-The image is pinned by `mayfly_version` (default `0.2.5`). `compose.yaml` comes from your checkout while the image comes from that version, so apply from a checkout that matches it: since 0.2.5 the reaper probes the ops port 8081, which older images do not open (decision 018). On the host, the deploy lives in `/opt/mayfly`, runs as `mayfly.service`, and logs with `journalctl -u mayfly` and `docker compose -f /opt/mayfly/compose.yaml logs`.
+The image is pinned by `mayfly_version` (default `0.2.6`). `compose.yaml` comes from your checkout while the image comes from that version, so apply from a checkout that matches it: since 0.2.5 the reaper probes the ops port 8081, which older images do not open (decision 018). On the host, the deploy lives in `/opt/mayfly`, runs as `mayfly.service`, and logs with `journalctl -u mayfly` and `docker compose -f /opt/mayfly/compose.yaml logs`.
 
 For benchmarks, `terraform apply -var vm_size=Standard_B2als_v2` (4 GB). Quotas in `denmarkeast`: 10 vCPU for `Basv2`, 4 for `BS`, 6 in total.
 
