@@ -184,7 +184,9 @@ The same deploy unit as the cloud host (decisions 014 and 015): mayfly and the r
    This builds the image, waits for mayfly's healthcheck, reads the tunnel hostname from cloudflared's `/quicktunnel` endpoint, and runs `setwebhook` from the image.
 3. Run `make smoke`, then stop with `make compose-down`. mayfly removes its workers on SIGTERM; Compose waits up to a minute for it.
 
-Without the tunnel, `docker compose up -d` runs mayfly and the reaper only, for example on a host with a public address. Workers attach to the `mayfly-workers` network, which mayfly creates on first use. To run a published release instead of a local build, set `MAYFLY_VERSION` to its version and run `docker compose pull`.
+Prometheus and Grafana start with the stack; Grafana is at <http://127.0.0.1:3000>, see [metrics.md](metrics.md#prometheus-and-grafana).
+
+Without the tunnel, `docker compose up -d` runs mayfly, the reaper, Prometheus and Grafana, for example on a host with a public address. Workers attach to the `mayfly-workers` network, which mayfly creates on first use. To run a published release instead of a local build, set `MAYFLY_VERSION` to its version and run `docker compose pull`.
 
 | Symptom | Cause | Fix |
 |---|---|---|

@@ -46,8 +46,11 @@ After the first `apply`, set the GitHub App webhook URL to `terraform output -ra
 terraform apply                                  # about 3 minutes, then cloud-init needs 3-5 more
 ssh "$(terraform output -raw ssh | cut -d' ' -f2)" cloud-init status --wait
 curl -sS -o /dev/null -w '%{http_code}\n' "https://$(terraform output -raw fqdn)/webhook"   # 405 means mayfly answered (decision 018)
+ssh -L 3000:localhost:3000 "$(terraform output -raw ssh | cut -d' ' -f2)"   # Grafana at http://127.0.0.1:3000 (decision 021)
 terraform destroy                                # when done; only the state storage and the vault remain
 ```
+
+Prometheus and Grafana run on the host with the rest of the deploy; their config in `infra/observability/` is shipped by cloud-init, gzipped (decision 021). Metrics are lost on `terraform destroy`, so take screenshots and benchmark numbers first. Mayfly's own metrics need an image with #21 (after 0.2.5): with an older `mayfly_version`, the dashboard shows mayfly and the reaper as down.
 
 Each rebuild has a new SSH host key under the same name, so `ssh` warns that the key changed. Remove the old one with `ssh-keygen -R "$(terraform output -raw fqdn)"`.
 

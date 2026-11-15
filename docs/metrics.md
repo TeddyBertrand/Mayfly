@@ -11,6 +11,30 @@ Mayfly exposes Prometheus metrics on each process's ops listener, which is never
 curl -s 127.0.0.1:8081/metrics | grep ^mayfly_
 ```
 
+## Prometheus and Grafana
+
+The Compose deploy runs both next to mayfly and the reaper (decision 021). Their config lives in `infra/observability/`:
+
+| File | What it does |
+|---|---|
+| `prometheus/prometheus.yml` | Scrapes `mayfly:8081` and `reaper:8082` every 15 s over the Compose network |
+| `grafana/provisioning/datasources/prometheus.yml` | Adds Prometheus as the default data source, uid `prometheus` |
+| `grafana/provisioning/dashboards/mayfly.yml` | Loads every JSON in `grafana/dashboards/` into the Mayfly folder |
+| `grafana/dashboards/mayfly.json` | The Mayfly dashboard, also Grafana's home page |
+
+```
+mayfly:8081 ─┐
+             ├──scrape 15s──► prometheus:9090 ◄──query── grafana:3000 ──► 127.0.0.1:3000 on the host
+reaper:8082 ─┘                (not published)                            (SSH tunnel on the VM)
+```
+
+- **Open Grafana.** Locally: <http://127.0.0.1:3000>, or another loopback port set with `GRAFANA_PUBLISH` in `.env` when 3000 is taken. On the VM: `ssh -L 3000:localhost:3000 <host>`, then the same URL on your machine. Nothing is public.
+- **Memory.** Idle, Grafana uses about 230 MB plus file cache and Prometheus about 40 MB; Compose caps them at 512 MB and 256 MB. On the 1 GB VM that leaves room for one worker (`workers = 1`); benchmarks use the 4 GB size.
+- **Login.** None: anonymous users are Viewers and the login form is disabled, which is safe only because the port is on loopback.
+- **Change a dashboard.** Set `GRAFANA_ROLE=Editor` in `.env` and run `docker compose up -d grafana`, edit in the UI, then export the dashboard JSON (keeping the data source uid `prometheus`, not an external-sharing placeholder) into `grafana/dashboards/`. Provisioned dashboards cannot be saved from the UI, so the repo stays the source of truth.
+- **Check the scrape.** The dashboard's "Scrape targets up" panel shows `up` for mayfly and the reaper. Without a published port, Prometheus's own UI is reached with `docker compose exec prometheus wget -qO- 'localhost:9090/api/v1/targets'`.
+- **Retention.** 15 days (`PROMETHEUS_RETENTION`) or 1 GB, whichever comes first. On Azure the data goes with the VM on `terraform destroy`, so capture screenshots and numbers first.
+
 ## Where the time goes
 
 ```
