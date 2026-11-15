@@ -195,9 +195,9 @@ Publish v0.2.5 (decision 010) so `main` ships the M2.5 refactor: shared `workflo
 
 ## M3 - Observability and baseline
 
-### [observability] Prometheus metrics in the receiver, provisioner and reaper
+### **done** [observability] Prometheus metrics in the receiver, provisioner and reaper (#21)
 Expose `/metrics`: queue time, boot time, job duration, workers alive, jobs by result, retries, reaped workers.
-- [ ] Metrics documented with names and units
+- [x] Metrics documented with names and units
 
 ### [observability] Prometheus and Grafana deployment
 Run both with Docker Compose or Terraform-managed config on the host.
