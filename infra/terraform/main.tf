@@ -106,8 +106,13 @@ resource "azurerm_linux_virtual_machine" "host" {
     vnet_cidr      = var.vnet_cidr
     admin_username = var.admin_username
     compose_yaml   = file("${path.module}/../../compose.yaml")
-    key_vault_uri  = data.azurerm_key_vault.secrets.vault_uri
-    domain         = azurerm_public_ip.host.fqdn
+    # Gzipped so a large dashboard stays under Azure's 64 KB custom_data limit (decision 021).
+    observability_files = {
+      for f in fileset("${path.module}/../observability", "**") :
+      f => base64gzip(file("${path.module}/../observability/${f}"))
+    }
+    key_vault_uri = data.azurerm_key_vault.secrets.vault_uri
+    domain        = azurerm_public_ip.host.fqdn
     env = {
       MAYFLY_VERSION       = var.mayfly_version
       MAYFLY_APP_ID        = var.app_id
