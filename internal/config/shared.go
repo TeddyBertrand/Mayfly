@@ -20,9 +20,11 @@ const (
 	DefaultOpsAddr = "127.0.0.1:8081"
 	// DefaultHealthURL is where the reaper finds mayfly's /healthz when both run on one host.
 	DefaultHealthURL = "http://" + DefaultOpsAddr + "/healthz"
+	// DefaultReaperOpsAddr is the reaper's own ops listener, one port above mayfly's so both fit on one host (decision 020).
+	DefaultReaperOpsAddr = "127.0.0.1:8082"
 )
 
-// LoadOpsAddr returns the address of the ops listener, which serves /healthz and must never be published.
+// LoadOpsAddr returns the address of mayfly's ops listener, which serves /healthz and /metrics and must never be published.
 func LoadOpsAddr(getenv func(string) string) string {
 	if v := getenv("MAYFLY_OPS_ADDR"); v != "" {
 		return v

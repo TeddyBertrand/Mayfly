@@ -13,6 +13,8 @@ import (
 	"github.com/TeddyBertrand/Mayfly/internal/config"
 	"github.com/TeddyBertrand/Mayfly/internal/github"
 	"github.com/TeddyBertrand/Mayfly/internal/logkey"
+	"github.com/TeddyBertrand/Mayfly/internal/metrics"
+	"github.com/TeddyBertrand/Mayfly/internal/ops"
 	"github.com/TeddyBertrand/Mayfly/internal/reaper"
 	"github.com/TeddyBertrand/Mayfly/internal/worker/docker"
 )
@@ -20,8 +22,12 @@ import (
 const (
 	// healthTimeout bounds the owner probe so a hung receiver counts as a missed probe instead of stalling the sweep.
 	healthTimeout = 5 * time.Second
+	// opsShutdownTimeout is how long a scrape in flight may take to finish at shutdown.
+	opsShutdownTimeout = 5 * time.Second
 	// component names this process in logs.
 	component = "reaper"
+	// serverOps names the ops HTTP server in logs.
+	serverOps = "ops"
 )
 
 // main loads config and runs the reaper loop until SIGTERM or SIGINT.
@@ -33,7 +39,7 @@ func main() {
 	}
 }
 
-// run wires Docker, GitHub and the owner probe into a Reaper and blocks until shutdown.
+// run wires Docker, GitHub and the owner probe into a Reaper, serves its ops endpoints, and blocks until shutdown.
 func run(logger *slog.Logger) error {
 	cfg, err := config.LoadReaper(os.Getenv, os.ReadFile)
 	if err != nil {
@@ -44,6 +50,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	reg := metrics.NewRegistry()
 	r := reaper.New(
 		docker.NewInventory(cfg.Docker.Socket),
 		github.NewClient(cfg.App.APIURL, cfg.App.ID, key),
@@ -51,14 +58,24 @@ func run(logger *slog.Logger) error {
 		reaper.Options{
 			MaxAge: cfg.MaxAge, Grace: cfg.Grace, MissedProbes: cfg.MissedProbes,
 			StaleAfter: cfg.StaleAfter, StuckAfter: cfg.StuckAfter, Labels: cfg.RunnerLabels,
+			Metrics: metrics.NewReaper(reg),
 		},
 		logger,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
-	logger.Info("reaper starting", logkey.Interval, cfg.Interval.String(), logkey.MaxAge, cfg.MaxAge.String(), logkey.HealthURL, cfg.HealthURL)
+
+	opsErr := make(chan error, 1)
+	go func() {
+		opsErr <- ops.Run(ctx, cfg.OpsAddr, opsShutdownTimeout, ops.NewHandler("", metrics.Handler(reg)), logger.With(logkey.Server, serverOps))
+		// Stop the sweeps too if the ops server failed on its own, e.g. the port was taken.
+		stop()
+	}()
+
+	logger.Info("reaper starting", logkey.Interval, cfg.Interval.String(), logkey.MaxAge, cfg.MaxAge.String(),
+		logkey.HealthURL, cfg.HealthURL, logkey.Addr, cfg.OpsAddr)
 	r.Run(ctx, cfg.Interval)
 	logger.Info("reaper stopped")
-	return nil
+	return <-opsErr
 }
