@@ -31,6 +31,10 @@ const (
 	StageWorker    = "worker"
 )
 
+// knownConclusions are GitHub's job conclusions. Each starts at 0 so increase() also counts the first job of a kind:
+// a series that first appears at 1 has no earlier sample to grow from.
+var knownConclusions = []string{"success", "failure", "cancelled", "skipped", "timed_out", "neutral", "action_required"}
+
 // waitBuckets cover queue and boot times, in seconds: a few seconds when warm, minutes on a cold image pull.
 var waitBuckets = []float64{1, 2, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300, 600}
 
@@ -51,7 +55,22 @@ type Mayfly struct {
 
 // NewMayfly creates the mayfly metrics and registers them with reg; a nil reg leaves them unregistered, for tests.
 func NewMayfly(reg prometheus.Registerer) *Mayfly {
-	f := promauto.With(reg)
+	m := newMayfly(promauto.With(reg))
+	Preset(m.Jobs, knownConclusions...)
+	Preset(m.ProvisionFailures, StageJITConfig, StageWorker)
+	Preset(m.Retries, OpJITConfig, OpWorkerStart)
+	return m
+}
+
+// Preset creates the series of v for each label value at 0, so dashboards see them before the first event.
+func Preset(v *prometheus.CounterVec, values ...string) {
+	for _, val := range values {
+		v.WithLabelValues(val)
+	}
+}
+
+// newMayfly builds the mayfly metrics with f.
+func newMayfly(f promauto.Factory) *Mayfly {
 	return &Mayfly{
 		QueueSeconds: f.NewHistogram(prometheus.HistogramOpts{
 			Namespace: namespace, Name: "job_queue_seconds",

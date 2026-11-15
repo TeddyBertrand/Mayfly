@@ -13,7 +13,6 @@ func TestHandlerServesEveryMetric(t *testing.T) {
 	reg := NewRegistry()
 	m := NewMayfly(reg)
 	NewReaper(reg)
-	// A vector only shows up once a label value has been used.
 	m.Jobs.WithLabelValues("success").Inc()
 
 	rec := httptest.NewRecorder()
@@ -27,6 +26,9 @@ func TestHandlerServesEveryMetric(t *testing.T) {
 		"mayfly_workers_alive",
 		"mayfly_jobs_waiting",
 		`mayfly_jobs_total{conclusion="success"} 1`,
+		`mayfly_jobs_total{conclusion="failure"} 0`,
+		`mayfly_provision_failures_total{stage="worker"} 0`,
+		`mayfly_retries_total{op="jit_config"} 0`,
 		"mayfly_reaper_registrations_removed_total",
 		"mayfly_reaper_sweep_failures_total",
 		"mayfly_reaper_last_sweep_timestamp_seconds",

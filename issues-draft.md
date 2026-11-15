@@ -204,9 +204,9 @@ Run both with Docker Compose or Terraform-managed config on the host.
 - [x] Both come up with the system
 - [x] Dashboard JSON provisioned from the repo
 
-### [observability] Grafana dashboard
+### **done** [observability] Grafana dashboard (#23)
 Panels: queue time, boot time, job duration, workers alive, failure rate. A cost-per-job panel is added in M6.
-- [ ] Dashboard shows live data from a test run
+- [x] Dashboard shows live data from a test run
 
 ### [bench] Demo repo with benchmark workflows
 Create a demo repo with realistic workflows (e.g. Go build and test, a Docker build, an npm install and test), all runnable on either hosted runners or Mayfly with one label change.

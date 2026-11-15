@@ -42,6 +42,16 @@ var reasonLabels = map[string]string{
 	ReasonNotPickedUp:       "not_picked_up",
 }
 
+// presetReasons starts every reason series at 0, so increase() also counts the first removal or stuck job of each kind.
+func presetReasons(m *metrics.Reaper) {
+	for _, r := range []string{ReasonMaxAge, ReasonOwnerGone, ReasonOwnerUnreachable, ReasonRunnerGone, ReasonRunnerOffline} {
+		metrics.Preset(m.WorkersRemoved, reasonLabels[r])
+	}
+	for _, r := range []string{ReasonMayflyUnreachable, ReasonNotPickedUp} {
+		metrics.Preset(m.StuckJobs, reasonLabels[r])
+	}
+}
+
 // GitHub is what the reaper reads and deletes on GitHub.
 type GitHub interface {
 	Runner(ctx context.Context, installationID int64, repo string, runnerID int64) (github.Runner, error)
@@ -116,6 +126,7 @@ func New(workers worker.Inventory, gh GitHub, owner Owner, opts Options, logger 
 	if m == nil {
 		m = metrics.NewReaper(nil)
 	}
+	presetReasons(m)
 	return &Reaper{
 		workers: workers, gh: gh, owner: owner, opts: opts, logger: logger, now: time.Now,
 		staleSince: map[int64]time.Time{}, reported: map[int64]bool{}, metrics: m,
