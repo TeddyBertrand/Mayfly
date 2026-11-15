@@ -45,7 +45,7 @@ mayfly:     queued event accepted ─────── in_progress event
 ```
 
 - **Queue time** is what a developer feels: how long the job waited for a runner. It uses GitHub's timestamps, the same ones the benchmark harness reads through the API.
-- **Boot time** is the part of the queue time Mayfly controls: its own queue, the JIT registration, the container start and the runner connecting. It uses mayfly's clock. Queue time minus boot time is roughly webhook delivery plus GitHub's own dispatch. M4 (pre-baked image, warm pool) sets out to shrink boot time.
+- **Boot time** is the part of the queue time Mayfly controls: its own queue, the JIT registration, the container start and the runner connecting. It uses mayfly's clock, and ends when the `in_progress` webhook arrives, so it also holds that delivery delay and can come out slightly above queue time. In the first test run (10 jobs, 2 workers) mean boot time was 11.5 s against 11.4 s of queue time: nearly all of the wait was Mayfly's, not GitHub's. M4 (pre-baked image, warm pool) sets out to shrink boot time.
 - **Job duration** is the job itself, from GitHub's timestamps. M5 (caches, mirrors, tmpfs) sets out to shrink it.
 
 ## mayfly
@@ -78,6 +78,30 @@ Events for jobs mayfly no longer tracks still count towards queue time, duration
 ## Runtime metrics
 
 Both processes also expose the standard Go runtime (`go_*`) and process (`process_*`) metrics: goroutines, memory, CPU, open file descriptors.
+
+## The Mayfly dashboard
+
+`infra/observability/grafana/dashboards/mayfly.json`, Grafana's home page. Each panel's description in Grafana repeats what it shows.
+
+| Row | Panel | Query idea |
+|---|---|---|
+| Now | Workers alive, Jobs waiting | Current gauge values |
+| | Jobs completed, Provision failures | `increase(...[$__range])`: counts over the selected time range, readable with few jobs |
+| | Failure rate | `failure` + `timed_out` over completed jobs that were not `cancelled` or `skipped`; "no jobs" when there are none |
+| | Scrape targets up | `up` for mayfly and the reaper |
+| Waiting for a runner | Queue time, Boot time | p50, p95 and mean, over 5 minutes |
+| Running | Job duration | p50, p95 and mean, over 5 minutes |
+| | Jobs by conclusion | Completed jobs per minute, stacked by conclusion |
+| | Workers and queue | Workers alive and jobs waiting over time |
+| Health | Retries | Retried attempts per minute, by operation |
+| | Reaper actions | Workers removed and stuck jobs by reason, stale registrations, failed sweeps, over the range |
+| | Since last reaper sweep | `time() - mayfly_reaper_last_sweep_timestamp_seconds` |
+
+Reading it:
+
+- **Percentiles are estimates, the mean is exact.** `histogram_quantile` interpolates inside the bucket that holds the percentile, so with few jobs p50 and p95 jump between bucket edges (a 3 s job in the 0-10 s bucket of job duration reads as 5 s). The mean comes from `_sum / _count` and is exact. Benchmark numbers come from the GitHub API (#25), not from this dashboard.
+- **Labelled counters start at 0.** Mayfly creates every known label value (conclusions, stages, operations, reasons) at 0 on startup. Otherwise a series would first appear at 1, and `increase()`, which needs an earlier sample, would miss the first job of each kind.
+- **Gaps are normal.** With no job in the last 5 minutes, the latency panels have nothing to compute and show a gap, not 0.
 
 ## Example queries
 
