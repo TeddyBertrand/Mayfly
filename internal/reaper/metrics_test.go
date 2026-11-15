@@ -22,6 +22,17 @@ func TestEveryReasonHasALabel(t *testing.T) {
 	}
 }
 
+// TestReasonsPreset checks every reason series exists at 0 before the first sweep, each on the right metric.
+func TestReasonsPreset(t *testing.T) {
+	m := newTestReaper(&fakeWorkers{}, &fakeRunners{}, liveOwner("live")).metrics
+	if got := testutil.CollectAndCount(m.WorkersRemoved); got != 5 {
+		t.Errorf("worker reason series = %d, want 5", got)
+	}
+	if got := testutil.CollectAndCount(m.StuckJobs); got != 2 {
+		t.Errorf("stuck reason series = %d, want 2", got)
+	}
+}
+
 // TestSweepMetrics checks a sweep counts removed workers, deleted registrations and stuck jobs by reason,
 // stamps its time, and that a failed container list counts as a failed sweep.
 func TestSweepMetrics(t *testing.T) {
