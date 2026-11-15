@@ -10,7 +10,7 @@ import (
 // TestHealthzReportsInstance checks /healthz answers 200 with JSON naming this process's instance ID.
 func TestHealthzReportsInstance(t *testing.T) {
 	rec := httptest.NewRecorder()
-	NewHandler("abc123").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	NewHandler("abc123", http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("status = %d, content-type = %q", rec.Code, rec.Header().Get("Content-Type"))
@@ -24,7 +24,16 @@ func TestHealthzReportsInstance(t *testing.T) {
 	}
 }
 
-// TestRoutes checks the ops listener serves only GET /healthz.
+// TestHealthzOmitsEmptyInstance checks a process without an instance ID, such as the reaper, answers {"status":"ok"}.
+func TestHealthzOmitsEmptyInstance(t *testing.T) {
+	rec := httptest.NewRecorder()
+	NewHandler("", http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if got := rec.Body.String(); got != `{"status":"ok"}` {
+		t.Errorf("body = %s", got)
+	}
+}
+
+// TestRoutes checks the ops listener serves only GET /healthz and GET /metrics.
 func TestRoutes(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -34,9 +43,12 @@ func TestRoutes(t *testing.T) {
 	}{
 		{"healthz", http.MethodGet, "/healthz", http.StatusOK},
 		{"healthz wrong method", http.MethodPost, "/healthz", http.StatusMethodNotAllowed},
+		{"metrics", http.MethodGet, "/metrics", http.StatusTeapot},
+		{"metrics wrong method", http.MethodPost, "/metrics", http.StatusMethodNotAllowed},
 		{"no webhook here", http.MethodPost, "/webhook", http.StatusNotFound},
 	}
-	h := NewHandler("abc123")
+	metrics := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	h := NewHandler("abc123", metrics)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()

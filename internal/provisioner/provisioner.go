@@ -9,8 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/TeddyBertrand/Mayfly/internal/github"
 	"github.com/TeddyBertrand/Mayfly/internal/logkey"
+	"github.com/TeddyBertrand/Mayfly/internal/metrics"
 	"github.com/TeddyBertrand/Mayfly/internal/retry"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
 	"github.com/TeddyBertrand/Mayfly/internal/workflow"
@@ -41,6 +44,8 @@ type Provisioner struct {
 	logger  *slog.Logger
 	newName func(int64) (string, error)
 	retry   retry.Policy
+	metrics *metrics.Mayfly
+	now     func() time.Time
 }
 
 // Options configure a Provisioner.
@@ -51,10 +56,16 @@ type Options struct {
 	Workers int
 	// QueueSize is how many jobs may wait for a free worker.
 	QueueSize int
+	// Metrics receives job and worker metrics; nil uses unregistered ones.
+	Metrics *metrics.Mayfly
 }
 
 // New returns a Provisioner that registers runners through jit and runs them on backend, as configured by opts.
 func New(jit JITIssuer, backend worker.Backend, opts Options, logger *slog.Logger) *Provisioner {
+	m := opts.Metrics
+	if m == nil {
+		m = metrics.NewMayfly(nil)
+	}
 	return &Provisioner{
 		jit:     jit,
 		backend: backend,
@@ -65,18 +76,21 @@ func New(jit JITIssuer, backend worker.Backend, opts Options, logger *slog.Logge
 		logger:  logger,
 		newName: github.RunnerName,
 		retry:   retry.Default,
+		metrics: m,
+		now:     time.Now,
 	}
 }
 
 // Enqueue tracks job as waiting and adds it to the queue without blocking, returning ErrQueueFull
 // when it is full. A job that is already tracked is ignored.
 func (p *Provisioner) Enqueue(job workflow.Job) error {
-	if !p.jobs.add(job.ID) {
+	if !p.jobs.add(job.ID, p.now()) {
 		p.logger.Info("job already tracked, queued event ignored", logkey.JobID, job.ID, logkey.Repo, job.Repo)
 		return nil
 	}
 	select {
 	case p.queue <- job:
+		p.metrics.JobsWaiting.Inc()
 		return nil
 	default:
 		p.jobs.remove(job.ID)
@@ -88,15 +102,42 @@ func (p *Provisioner) Enqueue(job workflow.Job) error {
 // Cancelling a job that has not started stops its worker; events for untracked jobs are ignored.
 func (p *Provisioner) Update(action workflow.Action, job workflow.Job) {
 	log := p.logger.With(logkey.Action, action, logkey.JobID, job.ID, logkey.Repo, job.Repo, logkey.RunnerName, job.RunnerName)
-	id, from, to, err := p.jobs.update(action, job)
+	p.observe(action, job)
+	c, err := p.jobs.update(action, job)
 	switch {
 	case errors.Is(err, errUntracked):
 		log.Info("update for untracked job ignored")
 	case err != nil:
-		log.Warn("job update rejected", logkey.TrackedJobID, id, logkey.Err, err)
+		log.Warn("job update rejected", logkey.TrackedJobID, c.ID, logkey.Err, err)
 	default:
-		log.Info("job state changed", logkey.TrackedJobID, id, logkey.From, from.String(), logkey.To, to.String())
+		if c.To == Running {
+			p.metrics.BootSeconds.Observe(p.now().Sub(c.Accepted).Seconds())
+		}
+		log.Info("job state changed", logkey.TrackedJobID, c.ID, logkey.From, c.From.String(), logkey.To, c.To.String())
 	}
+}
+
+// observe records the job metrics GitHub's timestamps give, for tracked and untracked jobs alike:
+// a completed event often arrives after the worker exited and its entry was removed.
+func (p *Provisioner) observe(action workflow.Action, job workflow.Job) {
+	switch action {
+	case workflow.ActionInProgress:
+		observeSpan(p.metrics.QueueSeconds, job.CreatedAt, job.StartedAt)
+	case workflow.ActionCompleted:
+		p.metrics.Jobs.WithLabelValues(job.Conclusion).Inc()
+		// A job cancelled before any runner took it never ran, so it has no duration.
+		if job.RunnerName != "" {
+			observeSpan(p.metrics.JobSeconds, job.StartedAt, job.CompletedAt)
+		}
+	}
+}
+
+// observeSpan records end minus start in h, skipping a span with a missing or reversed timestamp.
+func observeSpan(h prometheus.Histogram, start, end time.Time) {
+	if start.IsZero() || end.IsZero() || end.Before(start) {
+		return
+	}
+	h.Observe(end.Sub(start).Seconds())
 }
 
 // Run processes queued jobs until ctx is cancelled, then waits for in-flight workers to be cleaned up.
@@ -112,6 +153,7 @@ func (p *Provisioner) Run(ctx context.Context) {
 				case <-ctx.Done():
 					return
 				case job := <-p.queue:
+					p.metrics.JobsWaiting.Dec()
 					// select picks randomly when both cases are ready, so re-check before provisioning.
 					if ctx.Err() != nil {
 						p.logger.Warn("queued job dropped at shutdown", logkey.JobID, job.ID, logkey.Repo, job.Repo)
@@ -128,6 +170,7 @@ func (p *Provisioner) Run(ctx context.Context) {
 	for {
 		select {
 		case job := <-p.queue:
+			p.metrics.JobsWaiting.Dec()
 			p.logger.Warn("queued job dropped at shutdown", logkey.JobID, job.ID, logkey.Repo, job.Repo)
 		default:
 			p.logger.Info("provisioner stopped")
@@ -168,6 +211,7 @@ func (p *Provisioner) handle(ctx context.Context, job workflow.Job) {
 		name, cfg = n, c
 		return nil
 	}, func(attempt int, wait time.Duration, err error) {
+		p.metrics.Retries.WithLabelValues(metrics.OpJITConfig).Inc()
 		log.Warn("jit config failed, retrying", logkey.Attempt, attempt, logkey.Wait, wait.String(), logkey.Err, err)
 	})
 	if err != nil {
@@ -175,6 +219,7 @@ func (p *Provisioner) handle(ctx context.Context, job workflow.Job) {
 			log.Info("job dropped while registering runner")
 			return
 		}
+		p.metrics.ProvisionFailures.WithLabelValues(metrics.StageJITConfig).Inc()
 		log.Error("jit config failed", logkey.Err, err)
 		return
 	}
@@ -187,14 +232,18 @@ func (p *Provisioner) handle(ctx context.Context, job workflow.Job) {
 		return
 	}
 
-	if err := p.backend.Run(wctx, worker.Spec{
+	p.metrics.WorkersAlive.Inc()
+	err = p.backend.Run(wctx, worker.Spec{
 		JobID: job.ID, RunnerName: name, JITConfig: cfg.Encoded,
 		Repo: job.Repo, InstallationID: job.InstallationID, RunnerID: cfg.RunnerID,
-	}); err != nil {
+	})
+	p.metrics.WorkersAlive.Dec()
+	if err != nil {
 		if p.dropped(ctx, wctx) {
 			log.Info("worker stopped, job cancelled before it started")
 			return
 		}
+		p.metrics.ProvisionFailures.WithLabelValues(metrics.StageWorker).Inc()
 		log.Error("worker failed", logkey.Err, err)
 		return
 	}

@@ -35,6 +35,8 @@ type ReaperConfig struct {
 	StaleAfter    time.Duration
 	StuckAfter    time.Duration
 	RunnerLabels  []string
+	// OpsAddr is where the reaper serves /healthz and /metrics; it must never be published.
+	OpsAddr string
 }
 
 // LoadReaper reads the reaper settings through getenv and readFile. MAYFLY_WORKER_MAX_AGE must exceed
@@ -44,7 +46,10 @@ func LoadReaper(getenv func(string) string, readFile func(string) ([]byte, error
 	if err != nil {
 		return ReaperConfig{}, err
 	}
-	cfg := ReaperConfig{App: app, Docker: loadDocker(getenv), HealthURL: DefaultHealthURL}
+	cfg := ReaperConfig{App: app, Docker: loadDocker(getenv), HealthURL: DefaultHealthURL, OpsAddr: DefaultReaperOpsAddr}
+	if v := getenv("MAYFLY_REAPER_OPS_ADDR"); v != "" {
+		cfg.OpsAddr = v
+	}
 
 	if cfg.WorkerTimeout, err = loadWorkerTimeout(getenv); err != nil {
 		return ReaperConfig{}, err

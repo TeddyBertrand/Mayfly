@@ -89,7 +89,7 @@ Expected output (JSON, one line each): `server listening` twice (`"server":"webh
 | `MAYFLY_APP_KEY_FILE` | required | Path to the App private key (PEM) |
 | `MAYFLY_WEBHOOK_SECRET_FILE` | required | Path to the webhook secret |
 | `MAYFLY_LISTEN_ADDR` | `:8080` | Webhook address, the only one exposed to GitHub; `127.0.0.1:8080` keeps it off the LAN |
-| `MAYFLY_OPS_ADDR` | `127.0.0.1:8081` | Ops address (`/healthz`, later `/metrics`); never publish it (decision 018) |
+| `MAYFLY_OPS_ADDR` | `127.0.0.1:8081` | Ops address (`/healthz`, `/metrics`, see [metrics.md](metrics.md)); never publish it (decision 018) |
 | `MAYFLY_RUNNER_LABELS` | `mayfly` | Labels a job must request to be accepted (decision 007) |
 | `MAYFLY_WORKERS` | `2` | Jobs provisioned in parallel |
 | `MAYFLY_QUEUE_SIZE` | `100` | Jobs waiting before the receiver answers 503 |
@@ -114,6 +114,7 @@ The reaper (`make reaper`, with the same App defaults as `make dev`) reads the A
 | `MAYFLY_REAPER_STALE_AFTER` | `10m` | How long a `mayfly-*` registration must stay offline with no container before it is deleted; must outlast an image pull |
 | `MAYFLY_REAPER_STUCK_AFTER` | `10m` | How long a mayfly job may wait in `queued` before it is logged as stuck (decision 013) |
 | `MAYFLY_RUNNER_LABELS` | `mayfly` | Same as the receiver's: which queued jobs count as mayfly's |
+| `MAYFLY_REAPER_OPS_ADDR` | `127.0.0.1:8082` | The reaper's own `/healthz` and `/metrics`; one port above mayfly's so both run on one host (decision 020) |
 
 The first job pulls the worker image (~500 MB) and is slower; later jobs reuse it.
 
@@ -183,7 +184,9 @@ The same deploy unit as the cloud host (decisions 014 and 015): mayfly and the r
    This builds the image, waits for mayfly's healthcheck, reads the tunnel hostname from cloudflared's `/quicktunnel` endpoint, and runs `setwebhook` from the image.
 3. Run `make smoke`, then stop with `make compose-down`. mayfly removes its workers on SIGTERM; Compose waits up to a minute for it.
 
-Without the tunnel, `docker compose up -d` runs mayfly and the reaper only, for example on a host with a public address. Workers attach to the `mayfly-workers` network, which mayfly creates on first use. To run a published release instead of a local build, set `MAYFLY_VERSION` to its version and run `docker compose pull`.
+Prometheus and Grafana start with the stack; Grafana is at <http://127.0.0.1:3000>, see [metrics.md](metrics.md#prometheus-and-grafana).
+
+Without the tunnel, `docker compose up -d` runs mayfly, the reaper, Prometheus and Grafana, for example on a host with a public address. Workers attach to the `mayfly-workers` network, which mayfly creates on first use. To run a published release instead of a local build, set `MAYFLY_VERSION` to its version and run `docker compose pull`.
 
 | Symptom | Cause | Fix |
 |---|---|---|

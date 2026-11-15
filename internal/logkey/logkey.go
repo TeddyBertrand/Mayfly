@@ -42,6 +42,8 @@ const (
 	Elapsed      = "elapsed"
 	Workers      = "workers"
 	QueueSize    = "queue_size"
+	Op           = "op"
+	Stage        = "stage"
 )
 
 // Keys for worker containers.

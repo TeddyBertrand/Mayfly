@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TeddyBertrand/Mayfly/internal/metrics"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
 )
 
@@ -158,6 +159,7 @@ func newFakeBackend(t *testing.T, f *fakeEngine, timeout time.Duration) (*Backen
 		timeout: timeout,
 		logger:  slog.New(slog.NewJSONHandler(&logs, nil)),
 		owner:   "instance-a",
+		retries: metrics.NewMayfly(nil).Retries.WithLabelValues(metrics.OpWorkerStart),
 	}
 	return b, &logs
 }

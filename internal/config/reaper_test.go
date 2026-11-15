@@ -22,7 +22,8 @@ func TestLoadReaper(t *testing.T) {
 	}
 	if got.Interval != time.Minute || got.MaxAge != 6*time.Hour+15*time.Minute || got.Grace != 2*time.Minute ||
 		got.MissedProbes != 2 || got.HealthURL != "http://127.0.0.1:8081/healthz" || got.App.ID != 1 || got.Docker.Socket != DefaultDockerSocket ||
-		got.StaleAfter != 10*time.Minute || got.StuckAfter != 10*time.Minute || len(got.RunnerLabels) != 1 || got.RunnerLabels[0] != "mayfly" {
+		got.StaleAfter != 10*time.Minute || got.StuckAfter != 10*time.Minute || len(got.RunnerLabels) != 1 || got.RunnerLabels[0] != "mayfly" ||
+		got.OpsAddr != "127.0.0.1:8082" {
 		t.Errorf("defaults = %+v", got)
 	}
 
@@ -30,13 +31,14 @@ func TestLoadReaper(t *testing.T) {
 		"MAYFLY_WORKER_TIMEOUT": "1h", "MAYFLY_REAPER_INTERVAL": "30s", "MAYFLY_REAPER_GRACE": "5m",
 		"MAYFLY_REAPER_MISSED_PROBES": "3", "MAYFLY_HEALTH_URL": "http://h/healthz",
 		"MAYFLY_REAPER_STALE_AFTER": "20m", "MAYFLY_REAPER_STUCK_AFTER": "30m", "MAYFLY_RUNNER_LABELS": "mayfly,gpu",
+		"MAYFLY_REAPER_OPS_ADDR": ":8082",
 	}), files)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.MaxAge != time.Hour+15*time.Minute || got.Interval != 30*time.Second || got.Grace != 5*time.Minute ||
 		got.MissedProbes != 3 || got.HealthURL != "http://h/healthz" ||
-		got.StaleAfter != 20*time.Minute || got.StuckAfter != 30*time.Minute || len(got.RunnerLabels) != 2 {
+		got.StaleAfter != 20*time.Minute || got.StuckAfter != 30*time.Minute || len(got.RunnerLabels) != 2 || got.OpsAddr != ":8082" {
 		t.Errorf("overrides = %+v", got)
 	}
 
