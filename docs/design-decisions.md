@@ -222,3 +222,20 @@ Each entry records one decision, the options considered and the consequences. En
   - Metric names, units and buckets live in one package, `internal/metrics`, so they are defined once and documented in one table (`docs/metrics.md`). Each process builds its own registry (no global `prometheus.DefaultRegisterer`) and hands the metrics to its components, so tests use a fresh registry.
   - Queue time and job duration come from GitHub's timestamps (`created_at`, `started_at`, `completed_at`), so they match what the benchmark harness reads through the API and do not depend on the host clock. Boot time is measured on mayfly's own clock, from accepting the `queued` event to the `in_progress` event of its runner: the part of queue time Mayfly controls, which M4 sets out to shrink.
   - The reaper's ops listener defaults to `127.0.0.1:8082`, because `make dev` and `make reaper` run both processes on one host and mayfly already holds 8081. Compose sets `:8082`, and neither port is published.
+
+## 021. Prometheus and Grafana in the Compose deploy, config shipped by cloud-init, anonymous read-only Grafana
+- **Date:** 2026-11-15
+- **Status:** accepted
+- **Context:** #22. Prometheus and Grafana must start with the system and load their dashboard from the repo. Terraform ships only `compose.yaml` to the VM, embedded in cloud-init, and Azure caps cloud-init data at 64 KB; a Grafana dashboard is often 20-50 KB of JSON. Grafana needs some login model, and the default VM has 1 GB of RAM (decision 014).
+- **Options considered (config delivery):**
+  - **A. cloud-init writes the files, gzipped:** each file under `infra/observability/` lands at the same path under `/opt/mayfly`, compressed with Terraform's `base64gzip()`. `compose.yaml` bind-mounts them with the same relative paths locally and on the VM.
+  - **B. Custom images with the config baked in:** a simple VM, but two more images to build and publish in the release workflow.
+  - **C. Compose `configs:` with inline content:** no Terraform change, but a dashboard embedded in YAML is unreadable and hard to review.
+- **Options considered (Grafana login):**
+  - **A. Anonymous read-only, loopback only:** Grafana is published on `127.0.0.1:3000` only and reached on the VM through an SSH tunnel. Anonymous users are Viewers; no password to manage. Locally `.env` can raise the role to Editor to build dashboards.
+  - **B. Admin password as a secret:** conventional, but a new secret across `bootstrap.sh`, Key Vault, cloud-init and `.env`, for a page nobody outside the host can reach.
+- **Options considered (memory):**
+  - **A. Always on:** what "come up with the system" asks. Prometheus is capped by retention and a memory limit; benchmarks already use the 4 GB size.
+  - **B. An `observability` profile:** can be left off on 1 GB, but one more switch to explain.
+- **Decision:** A, A and A.
+- **Consequences:** Prometheus is never published; it scrapes `mayfly:8081` and `reaper:8082` over the Compose network (decisions 018 and 020). The Grafana login form is disabled, so the dashboard is changed in the repo, not in the UI; anyone with shell or SSH access to the host can see it, which is the same trust boundary as `docker compose logs`. Metrics live in a named volume and are lost when the VM is destroyed (decision 014), so screenshots and benchmark numbers must be captured before `terraform destroy`. A changed file under `infra/observability/` reaches the VM only on a new `terraform apply` that recreates it, as `compose.yaml` already does.
