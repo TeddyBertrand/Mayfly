@@ -1,0 +1,15 @@
+# Scrapes the ops listeners over the Compose network; neither port is published (decisions 018, 020 and 021).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: mayfly
+    static_configs:
+      - targets: ["mayfly:8081"]
+  - job_name: reaper
+    static_configs:
+      - targets: ["reaper:8082"]
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
