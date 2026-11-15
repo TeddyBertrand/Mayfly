@@ -33,7 +33,7 @@ services:
     environment:
       <<: *env
       MAYFLY_LISTEN_ADDR: ":8080"
-      # Ops endpoints (/healthz, later /metrics) for the reaper over the Compose network; never published (decision 018).
+      # Ops endpoints (/healthz, /metrics) for the reaper and Prometheus over the Compose network; never published (decision 018).
       MAYFLY_OPS_ADDR: ":8081"
       MAYFLY_WEBHOOK_SECRET_FILE: /run/secrets/webhook_secret
       MAYFLY_WORKERS: ${MAYFLY_WORKERS:-2}
