@@ -204,3 +204,21 @@ Each entry records one decision, the options considered and the consequences. En
   - **C. Every test in `tests/`:** matches the C++ habit, but every white-box test would have to be deleted or the code would have to export internals just for tests, which makes it harder to read, not easier. It also breaks the convention Go reviewers expect.
 - **Decision:** A and B together. Unit tests stay beside the code; end-to-end tests go in `tests/` with `//go:build e2e`.
 - **Consequences:** `go test ./...` stays fast and never runs e2e tests; they run with `go test -tags e2e ./tests/...`. A `make e2e` target and the `tests/` folder arrive with the first e2e test, since `go test ./tests/...` fails while the folder does not exist. Tests that need a real external system but test internals (`internal/github/live_test.go`, `internal/worker/docker/docker_test.go`) stay beside their code and skip themselves unless enabled. `internal/provisioner/handoff_test.go`, which wires the real receiver to the provisioner, is the first candidate to move to `tests/`. Rules in `docs/go-conventions.md`.
+
+## 020. Prometheus metrics with `client_golang`, one ops listener per process
+- **Date:** 2026-11-15
+- **Status:** accepted
+- **Context:** #21. M3 needs queue time, boot time, job duration, workers alive, jobs by result, retries and reaped workers, scraped by Prometheus and graphed in Grafana. These numbers back the baseline benchmark. Until now `go.mod` had no third-party dependencies. Mayfly and the reaper are separate processes in separate containers (decision 001 and `docs/components.md`), and only mayfly has an ops listener (decision 018).
+- **Options considered (library):**
+  - **A. `prometheus/client_golang`:** the reference Go client. Correct histograms, label escaping and thread safety, plus Go runtime and process metrics for free. Brings about eight indirect dependencies (protobuf, procfs, ...).
+  - **B. Hand-written text exposition format:** no dependency and teaches the format, but histograms, escaping and concurrency would have to be right by hand, which reinvents a solved problem.
+  - **C. OpenTelemetry SDK with a Prometheus exporter:** vendor-neutral and ready for traces, but far heavier, with more concepts (meter providers, readers, exporters) than one host needs.
+- **Options considered (reaper metrics):**
+  - **A. Its own ops listener:** the reaper serves `/metrics` and `/healthz` on `MAYFLY_REAPER_OPS_ADDR`, scraped like mayfly.
+  - **B. Pushgateway:** made for short batch jobs; for a long-running process it keeps stale values after a crash and adds a service.
+  - **C. Report through mayfly:** breaks the rule that the cleaner must not depend on the process that may have failed.
+- **Decision:** A and A. `client_golang`, and a separate ops listener for the reaper.
+- **Consequences:**
+  - Metric names, units and buckets live in one package, `internal/metrics`, so they are defined once and documented in one table (`docs/metrics.md`). Each process builds its own registry (no global `prometheus.DefaultRegisterer`) and hands the metrics to its components, so tests use a fresh registry.
+  - Queue time and job duration come from GitHub's timestamps (`created_at`, `started_at`, `completed_at`), so they match what the benchmark harness reads through the API and do not depend on the host clock. Boot time is measured on mayfly's own clock, from accepting the `queued` event to the `in_progress` event of its runner: the part of queue time Mayfly controls, which M4 sets out to shrink.
+  - The reaper's ops listener defaults to `127.0.0.1:8082`, because `make dev` and `make reaper` run both processes on one host and mayfly already holds 8081. Compose sets `:8082`, and neither port is published.

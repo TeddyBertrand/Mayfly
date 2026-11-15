@@ -1,7 +1,10 @@
 // Package workflow holds the GitHub workflow job as Mayfly sees it, shared by the receiver, provisioner and reaper.
 package workflow
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // Action is the action of a workflow_job webhook event, as GitHub sends it.
 type Action string
@@ -28,6 +31,10 @@ type Job struct {
 	RunnerName string
 	// Conclusion is set on completed, e.g. "success" or "cancelled".
 	Conclusion string
+	// CreatedAt, StartedAt and CompletedAt are GitHub's timestamps; zero when the event does not carry them.
+	CreatedAt   time.Time
+	StartedAt   time.Time
+	CompletedAt time.Time
 }
 
 // MatchesLabels reports whether labels contains every label in required, ignoring case as GitHub does.

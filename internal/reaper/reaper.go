@@ -13,6 +13,7 @@ import (
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
 	"github.com/TeddyBertrand/Mayfly/internal/logkey"
+	"github.com/TeddyBertrand/Mayfly/internal/metrics"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
 	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
@@ -29,6 +30,17 @@ const (
 	ReasonMayflyUnreachable = "mayfly unreachable"
 	ReasonNotPickedUp       = "not picked up: mayfly is up but no runner took the job, check its logs for this job"
 )
+
+// reasonLabels are the short reason label values on the reaper metrics, one per reason above.
+var reasonLabels = map[string]string{
+	ReasonMaxAge:            "max_age",
+	ReasonOwnerGone:         "owner_gone",
+	ReasonOwnerUnreachable:  "owner_unreachable",
+	ReasonRunnerGone:        "runner_gone",
+	ReasonRunnerOffline:     "runner_offline",
+	ReasonMayflyUnreachable: "mayfly_unreachable",
+	ReasonNotPickedUp:       "not_picked_up",
+}
 
 // GitHub is what the reaper reads and deletes on GitHub.
 type GitHub interface {
@@ -57,6 +69,8 @@ type Options struct {
 	StuckAfter time.Duration
 	// Labels are the labels a job must request to be mayfly's, as in the receiver.
 	Labels []string
+	// Metrics receives what each sweep did; nil uses unregistered ones.
+	Metrics *metrics.Reaper
 }
 
 // Removal is one worker the reaper removed and why.
@@ -93,13 +107,18 @@ type Reaper struct {
 	staleSince map[int64]time.Time
 	// reported holds stuck jobs already logged, so each is logged once.
 	reported map[int64]bool
+	metrics  *metrics.Reaper
 }
 
 // New returns a Reaper over workers, checking GitHub through gh and the live owner through owner.
 func New(workers worker.Inventory, gh GitHub, owner Owner, opts Options, logger *slog.Logger) *Reaper {
+	m := opts.Metrics
+	if m == nil {
+		m = metrics.NewReaper(nil)
+	}
 	return &Reaper{
 		workers: workers, gh: gh, owner: owner, opts: opts, logger: logger, now: time.Now,
-		staleSince: map[int64]time.Time{}, reported: map[int64]bool{},
+		staleSince: map[int64]time.Time{}, reported: map[int64]bool{}, metrics: m,
 	}
 }
 
@@ -125,8 +144,10 @@ func (r *Reaper) Run(ctx context.Context, interval time.Duration) {
 func (r *Reaper) Sweep(ctx context.Context) (Report, error) {
 	workers, err := r.workers.List(ctx)
 	if err != nil {
+		r.metrics.SweepFailures.Inc()
 		return Report{}, fmt.Errorf("list workers: %w", err)
 	}
+	r.metrics.LastSweep.Set(float64(r.now().Unix()))
 	live, ownerErr := r.owner(ctx)
 	if ownerErr != nil {
 		r.missed++
@@ -149,6 +170,7 @@ func (r *Reaper) Sweep(ctx context.Context) (Report, error) {
 			claimed[w.RunnerID] = true
 			continue
 		}
+		r.metrics.WorkersRemoved.WithLabelValues(reasonLabels[reason]).Inc()
 		log.Info("orphaned worker removed", logkey.Age, r.now().Sub(w.Created).Round(time.Second).String())
 		rep.Removed = append(rep.Removed, Removal{Worker: w, Reason: reason})
 	}
@@ -197,6 +219,7 @@ func (r *Reaper) sweepRegistrations(ctx context.Context, repos []github.Repo, cl
 				log.Error("stale registration delete failed", logkey.Err, err)
 				continue
 			}
+			r.metrics.RegistrationsRemoved.Inc()
 			log.Info("stale registration removed", logkey.StaleFor, r.now().Sub(since).Round(time.Second).String())
 			delete(r.staleSince, reg.ID)
 			deleted = append(deleted, reg)
@@ -238,6 +261,7 @@ func (r *Reaper) sweepStuck(ctx context.Context, repos []github.Repo, ownerErr e
 				reason = ReasonMayflyUnreachable
 			}
 			r.reported[j.ID] = true
+			r.metrics.StuckJobs.WithLabelValues(reasonLabels[reason]).Inc()
 			r.logger.Warn("job stuck in queued", logkey.Repo, repo.FullName, logkey.JobID, j.ID, logkey.JobName, j.Name,
 				logkey.Age, age.Round(time.Second).String(), logkey.Reason, reason, logkey.URL, j.URL)
 			stuck = append(stuck, Stuck{Repo: repo.FullName, Job: j, Reason: reason})

@@ -3,6 +3,7 @@ package receiver
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
@@ -43,6 +44,14 @@ func TestParseWorkflowJob(t *testing.T) {
 			wantAction: workflow.ActionCompleted,
 			wantJob: workflow.Job{ID: 42, RunID: 7, Name: "build", Repo: "octo/demo", InstallationID: 99, Labels: []string{"self-hosted", "mayfly"},
 				RunnerName: "mayfly-42-ab", Conclusion: "cancelled"},
+		},
+		{
+			name: "timestamps, null left zero",
+			body: `{"action":"in_progress","workflow_job":{"id":42,"created_at":"2026-11-15T10:00:00Z",` +
+				`"started_at":"2026-11-15T10:00:12Z","completed_at":null}}`,
+			wantAction: workflow.ActionInProgress,
+			wantJob: workflow.Job{ID: 42, CreatedAt: time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC),
+				StartedAt: time.Date(2026, 11, 15, 10, 0, 12, 0, time.UTC)},
 		},
 		{"not json", `{`, "", workflow.Job{}, true},
 		{"missing job id", `{"action":"queued","workflow_job":{}}`, "", workflow.Job{}, true},

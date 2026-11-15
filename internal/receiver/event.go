@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
@@ -18,6 +19,10 @@ type workflowJobEvent struct {
 		Labels     []string `json:"labels"`
 		RunnerName string   `json:"runner_name"`
 		Conclusion string   `json:"conclusion"`
+		// GitHub sends null for a timestamp not reached yet, which leaves it zero.
+		CreatedAt   time.Time `json:"created_at"`
+		StartedAt   time.Time `json:"started_at"`
+		CompletedAt time.Time `json:"completed_at"`
 	} `json:"workflow_job"`
 	Repository struct {
 		FullName string `json:"full_name"`
@@ -45,5 +50,8 @@ func parseWorkflowJob(body []byte) (workflow.Action, workflow.Job, error) {
 		Labels:         ev.WorkflowJob.Labels,
 		RunnerName:     ev.WorkflowJob.RunnerName,
 		Conclusion:     ev.WorkflowJob.Conclusion,
+		CreatedAt:      ev.WorkflowJob.CreatedAt,
+		StartedAt:      ev.WorkflowJob.StartedAt,
+		CompletedAt:    ev.WorkflowJob.CompletedAt,
 	}, nil
 }

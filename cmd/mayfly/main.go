@@ -18,6 +18,7 @@ import (
 	"github.com/TeddyBertrand/Mayfly/internal/config"
 	"github.com/TeddyBertrand/Mayfly/internal/github"
 	"github.com/TeddyBertrand/Mayfly/internal/logkey"
+	"github.com/TeddyBertrand/Mayfly/internal/metrics"
 	"github.com/TeddyBertrand/Mayfly/internal/ops"
 	"github.com/TeddyBertrand/Mayfly/internal/provisioner"
 	"github.com/TeddyBertrand/Mayfly/internal/receiver"
@@ -107,13 +108,15 @@ func run(logger *slog.Logger) error {
 	}
 	logger = logger.With(logkey.Instance, instance)
 
+	reg := metrics.NewRegistry()
+	m := metrics.NewMayfly(reg)
 	gh := github.NewClient(pcfg.App.APIURL, pcfg.App.ID, key)
 	backend := docker.New(docker.Options{
 		Socket: pcfg.Docker.Socket, Image: pcfg.WorkerImage, Network: pcfg.WorkerNetwork,
-		Timeout: pcfg.WorkerTimeout, Owner: instance,
+		Timeout: pcfg.WorkerTimeout, Owner: instance, Metrics: m,
 	}, logger)
 	prov := provisioner.New(gh, backend, provisioner.Options{
-		Labels: rcfg.RunnerLabels, Workers: pcfg.Workers, QueueSize: pcfg.QueueSize,
+		Labels: rcfg.RunnerLabels, Workers: pcfg.Workers, QueueSize: pcfg.QueueSize, Metrics: m,
 	}, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
@@ -127,7 +130,8 @@ func run(logger *slog.Logger) error {
 
 	opsErr := make(chan error, 1)
 	go func() {
-		opsErr <- ops.Run(ctx, config.LoadOpsAddr(os.Getenv), rcfg.ShutdownTimeout, instance, logger.With(logkey.Server, serverOps))
+		opsErr <- ops.Run(ctx, config.LoadOpsAddr(os.Getenv), rcfg.ShutdownTimeout,
+			ops.NewHandler(instance, metrics.Handler(reg)), logger.With(logkey.Server, serverOps))
 		// Stop everything if the ops server failed on its own, e.g. the port was taken.
 		stop()
 	}()

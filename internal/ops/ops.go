@@ -13,26 +13,28 @@ import (
 	"github.com/TeddyBertrand/Mayfly/internal/httpserve"
 )
 
-// Health is the /healthz response body.
+// Health is the /healthz response body. Instance is empty for processes the reaper does not track.
 type Health struct {
 	Status   string `json:"status"`
-	Instance string `json:"instance"`
+	Instance string `json:"instance,omitempty"`
 }
 
-// NewHandler returns the ops routes: GET /healthz, reporting instance so the reaper can tell who is alive.
-func NewHandler(instance string) http.Handler {
+// NewHandler returns the ops routes: GET /healthz, reporting instance so the reaper can tell who is alive,
+// and GET /metrics, served by metrics for Prometheus.
+func NewHandler(instance string, metrics http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz(instance))
+	mux.Handle("GET /metrics", metrics)
 	return mux
 }
 
-// Run serves the ops routes on addr until ctx is cancelled, draining requests within shutdownTimeout.
-func Run(ctx context.Context, addr string, shutdownTimeout time.Duration, instance string, logger *slog.Logger) error {
+// Run serves h on addr until ctx is cancelled, draining requests within shutdownTimeout.
+func Run(ctx context.Context, addr string, shutdownTimeout time.Duration, h http.Handler, logger *slog.Logger) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", addr, err)
 	}
-	return httpserve.Serve(ctx, httpserve.New(NewHandler(instance)), ln, shutdownTimeout, logger)
+	return httpserve.Serve(ctx, httpserve.New(h), ln, shutdownTimeout, logger)
 }
 
 // handleHealthz reports that the process is up and which instance it is; it must not depend on external services.
