@@ -11,6 +11,12 @@ packages:
 write_files:
   - path: /opt/mayfly/compose.yaml
     content: ${jsonencode(compose_yaml)}
+  # Prometheus and Grafana config at the same relative paths as in the repo, so compose.yaml mounts them unchanged (decision 021).
+%{ for path, content in observability_files ~}
+  - path: /opt/mayfly/infra/observability/${path}
+    encoding: gz+b64
+    content: ${content}
+%{ endfor ~}
   - path: /opt/mayfly/settings.env
     content: ${jsonencode(join("\n", [for k, v in env : "${k}=${v}"]))}
   - path: /usr/local/sbin/mayfly-deploy

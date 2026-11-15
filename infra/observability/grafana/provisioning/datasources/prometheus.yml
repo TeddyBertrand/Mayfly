@@ -1,0 +1,14 @@
+# Read by Grafana at startup; the fixed uid lets dashboards in the repo reference this data source.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # Matches scrape_interval, so rate() windows are never shorter than one scrape.
+      timeInterval: 15s

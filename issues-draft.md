@@ -199,10 +199,10 @@ Publish v0.2.5 (decision 010) so `main` ships the M2.5 refactor: shared `workflo
 Expose `/metrics`: queue time, boot time, job duration, workers alive, jobs by result, retries, reaped workers.
 - [x] Metrics documented with names and units
 
-### [observability] Prometheus and Grafana deployment
+### **done** [observability] Prometheus and Grafana deployment (#22)
 Run both with Docker Compose or Terraform-managed config on the host.
-- [ ] Both come up with the system
-- [ ] Dashboard JSON provisioned from the repo
+- [x] Both come up with the system
+- [x] Dashboard JSON provisioned from the repo
 
 ### [observability] Grafana dashboard
 Panels: queue time, boot time, job duration, workers alive, failure rate. A cost-per-job panel is added in M6.

@@ -1,0 +1,12 @@
+# Loads every dashboard JSON in the repo's infra/observability/grafana/dashboards (decision 021).
+apiVersion: 1
+
+providers:
+  - name: mayfly
+    folder: Mayfly
+    type: file
+    disableDeletion: true
+    # The repo is the source of truth: export changes as JSON instead of saving them in the UI.
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards
