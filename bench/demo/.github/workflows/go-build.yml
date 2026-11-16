@@ -1,0 +1,36 @@
+name: go-build
+run-name: go-build on ${{ inputs.runner }}
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner type to run on
+        type: choice
+        options: [hosted, mayfly]
+        default: hosted
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # The one switch between runner types; everything below is identical on both.
+    runs-on: ${{ inputs.runner == 'mayfly' && fromJSON('["self-hosted","mayfly"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: go
+    env:
+      # The worker image has no C compiler; disabling cgo on both sides keeps the work the same.
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.4"
+          # Unoptimized baseline: every run downloads modules; caching is measured separately.
+          cache: false
+      - run: go mod download
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -count=1 ./...
