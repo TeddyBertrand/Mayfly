@@ -71,6 +71,16 @@ const (
 	New = "new"
 )
 
+// Keys for the benchmark harness.
+const (
+	Workflow  = "workflow"
+	Runner    = "runner"
+	RunID     = "run_id"
+	Iteration = "iteration"
+	Total     = "total"
+	Progress  = "progress"
+)
+
 // Keys for redacted log values.
 const (
 	Encoded = "encoded"
