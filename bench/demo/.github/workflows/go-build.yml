@@ -6,7 +6,7 @@ on:
       runner:
         description: Runner type to run on
         type: choice
-        options: [hosted, mayfly]
+        options: [hosted, mayfly, classic]
         default: hosted
 
 permissions:
@@ -14,8 +14,8 @@ permissions:
 
 jobs:
   build:
-    # The one switch between runner types; everything below is identical on both.
-    runs-on: ${{ inputs.runner == 'mayfly' && fromJSON('["self-hosted","mayfly"]') || 'ubuntu-24.04' }}
+    # The one switch between runner types; everything below is identical on all of them.
+    runs-on: ${{ fromJSON('{"hosted":"ubuntu-24.04","mayfly":["self-hosted","mayfly"],"classic":["self-hosted","classic"]}')[inputs.runner] }}
     timeout-minutes: 15
     defaults:
       run:
