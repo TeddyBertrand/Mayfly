@@ -1,0 +1,7 @@
+name: mayfly-smoke
+on: workflow_dispatch
+jobs:
+  hello:
+    runs-on: [self-hosted, mayfly]
+    steps:
+      - run: echo "Hello from $RUNNER_NAME on $(hostname)" && uname -a

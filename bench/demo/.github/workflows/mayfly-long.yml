@@ -1,0 +1,8 @@
+name: mayfly-long
+on: workflow_dispatch
+jobs:
+  sleep:
+    runs-on: [self-hosted, mayfly]
+    timeout-minutes: 15
+    steps:
+      - run: echo "Sleeping on $RUNNER_NAME" && sleep 600

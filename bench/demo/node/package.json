@@ -1,0 +1,16 @@
+{
+  "name": "mayfly-demo-cart",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node workload of the Mayfly demo repo: cart pricing with vitest tests",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "5.1.0"
+  }
+}
