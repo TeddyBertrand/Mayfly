@@ -222,10 +222,10 @@ Create a demo repo with realistic workflows (e.g. Go build and test, a Docker bu
 
 `go-build` and `npm-test` ship; the canonical copy is in `bench/demo/` (`docs/demo-repo.md`). The Docker build is deferred: workers have no Docker daemon (decision 015), so it would only pass on hosted runners.
 
-### [bench] Benchmark harness and methodology
+### **done** [bench] Benchmark harness and methodology (#25)
 Script that triggers N runs, collects timings through the API (queue time, first-step time, total time), and outputs CSV plus a summary. Document warm-up, run count, and how medians are computed.
-- [ ] Methodology in `docs/benchmarks.md`
-- [ ] Re-running gives results within a stated variance
+- [x] Methodology in `docs/benchmarks.md`
+- [x] Re-running gives results within a stated variance
 
 ### [bench] Baseline results
 Run the harness on GitHub-hosted runners and on unoptimized Mayfly. Record both in the benchmark table.
