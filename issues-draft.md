@@ -216,9 +216,11 @@ Publish v0.2.6 (decision 010) so `main` ships the observability half of M3: Prom
 - [ ] `mayfly --version` in the image prints `0.2.6`
 - [x] Terraform default `mayfly_version` is `0.2.6`
 
-### [bench] Demo repo with benchmark workflows
+### **done** [bench] Demo repo with benchmark workflows (#24)
 Create a demo repo with realistic workflows (e.g. Go build and test, a Docker build, an npm install and test), all runnable on either hosted runners or Mayfly with one label change.
-- [ ] Workflows run on both runner types
+- [x] Workflows run on both runner types
+
+`go-build` and `npm-test` ship; the canonical copy is in `bench/demo/` (`docs/demo-repo.md`). The Docker build is deferred: workers have no Docker daemon (decision 015), so it would only pass on hosted runners.
 
 ### [bench] Benchmark harness and methodology
 Script that triggers N runs, collects timings through the API (queue time, first-step time, total time), and outputs CSV plus a summary. Document warm-up, run count, and how medians are computed.
