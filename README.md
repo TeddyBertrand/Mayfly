@@ -12,6 +12,7 @@ See [brief.md](brief.md) for goals, architecture and scope.
 cmd/
   mayfly/          entrypoint: receiver + provisioner in one process
   reaper/          entrypoint: cleans up leaked or stuck workers
+  bench/           benchmark harness: runs the demo workflows, summarizes timings
 internal/
   config/          settings from MAYFLY_* environment variables
   receiver/        webhook handling, signature verification, dedupe
@@ -20,6 +21,10 @@ internal/
   worker/          worker interface
   worker/docker/   Docker backend over the Engine API
   reaper/          orphan detection and cleanup
+  bench/           benchmark schedule, timings, statistics and reports
+bench/
+  demo/            canonical copy of the demo repo the benchmarks run on
+  results/         benchmark CSVs and summaries
 ```
 
 The receiver and provisioner share one binary so they can pass jobs through an in-memory queue ([decision 001](docs/design-decisions.md)). Each component keeps its own `internal/` package, so splitting them later stays cheap. `internal/` keeps the code private to this module.
@@ -30,6 +35,6 @@ Build everything with:
 go build ./...
 ```
 
-To run Mayfly locally and send it real jobs from GitHub, follow [docs/local-dev.md](docs/local-dev.md).
+To run Mayfly locally and send it real jobs from GitHub, follow [docs/local-dev.md](docs/local-dev.md). How Mayfly is measured against GitHub-hosted and stock self-hosted runners is in [docs/benchmarks.md](docs/benchmarks.md).
 
 **Status:** M1 core loop works: a `workflow_job` webhook starts a one-job Docker runner that is removed afterwards.

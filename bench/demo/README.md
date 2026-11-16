@@ -2,7 +2,7 @@
 
 Benchmark target for [Mayfly](https://github.com/TeddyBertrand/Mayfly). The canonical copy lives in Mayfly's `bench/demo/`; see `docs/demo-repo.md` there.
 
-Every workflow is started by hand and takes a `runner` input: `hosted` runs on `ubuntu-24.04`, `mayfly` on `[self-hosted, mayfly]`.
+Every workflow is started by hand and takes a `runner` input: `hosted` runs on `ubuntu-24.04`, `mayfly` on `[self-hosted, mayfly]`, `classic` on the stock long-lived runner `[self-hosted, classic]`.
 
 ```bash
 gh workflow run go-build -f runner=mayfly

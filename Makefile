@@ -1,4 +1,4 @@
-.PHONY: build test fmt-check lint dev compose-dev compose-down reaper smoke long workers runners check-clean crash
+.PHONY: build test fmt-check lint dev compose-dev compose-down reaper smoke long workers runners check-clean crash classic-up classic-down
 
 # Same defaults as scripts/dev.sh; set the variables in the environment to override them.
 MAYFLY_APP_ID ?= 5714458
@@ -54,9 +54,16 @@ runners:
 check-clean:
 	@ids=$$(docker ps -aq --filter label=mayfly.job_id) || { echo "cannot reach Docker"; exit 1; }; \
 	n=$$(printf '%s' "$$ids" | grep -c . || true); \
-	r=$$(gh api repos/$(DEMO_REPO)/actions/runners --jq .total_count) || { echo "cannot reach GitHub"; exit 1; }; \
+	r=$$(gh api repos/$(DEMO_REPO)/actions/runners --jq '[.runners[] | select(.name | startswith("mayfly-"))] | length') || { echo "cannot reach GitHub"; exit 1; }; \
 	echo "worker containers: $$n, runner registrations: $$r"; \
 	[ "$$n" -eq 0 ] && [ "$$r" -eq 0 ]
+
+# classic-up registers and starts the stock self-hosted runner for benchmarks; classic-down removes it.
+classic-up:
+	DEMO_REPO=$(DEMO_REPO) ./scripts/classic-runner.sh up
+
+classic-down:
+	DEMO_REPO=$(DEMO_REPO) ./scripts/classic-runner.sh down
 
 # crash kills the mayfly started by make dev with SIGKILL, so it cannot clean up: its workers become orphans.
 crash:

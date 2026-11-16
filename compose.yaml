@@ -127,6 +127,18 @@ services:
       prometheus:
         condition: service_healthy
 
+  # Stock long-lived self-hosted runner, the benchmark's third runner type (docs/benchmarks.md).
+  # Same image and network as Mayfly's workers; registered once by scripts/classic-runner.sh.
+  classic:
+    profiles: [classic]
+    image: ghcr.io/actions/actions-runner:2.338.2
+    restart: unless-stopped
+    command: ["./run.sh"]
+    volumes:
+      # Pre-filled from the image on first use; keeps the registration, _work and the tool cache between jobs.
+      - classic_runner:/home/runner
+    networks: [workers]
+
   tunnel:
     profiles: [tunnel]
     image: cloudflare/cloudflared:2025.11.1
@@ -158,6 +170,13 @@ volumes:
   caddy_data:
   prometheus_data:
   grafana_data:
+  classic_runner:
+
+networks:
+  # Created by mayfly on first use, or by scripts/classic-runner.sh; external so Compose never deletes it.
+  workers:
+    name: mayfly-workers
+    external: true
 
 secrets:
   app_key:

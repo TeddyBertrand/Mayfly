@@ -19,6 +19,8 @@ make <target> [VAR=value ...]
 | Jobs | `make smoke` | Runs the short demo job and waits for its result | gh |
 | | `make long` | Starts the 10-minute demo job | gh |
 | | `make crash` | Kills the `make dev` mayfly with `SIGKILL` | a running `make dev` |
+| Bench | `make classic-up` | Registers and starts the stock self-hosted runner | Docker, gh |
+| | `make classic-down` | Stops it, unregisters it and deletes its volume | Docker, gh |
 | Inspect | `make workers` | Lists worker containers and their labels | Docker |
 | | `make runners` | Lists runner registrations on GitHub | gh |
 | | `make check-clean` | Fails unless nothing is left behind | Docker, gh |
@@ -31,7 +33,7 @@ Set them in the environment or on the command line (`make runners DEMO_REPO=me/o
 |---|---|---|
 | `MAYFLY_APP_ID` | `5714458` | `reaper` |
 | `MAYFLY_APP_KEY_FILE` | `~/.config/mayfly/app.pem` | `reaper` |
-| `DEMO_REPO` | `TeddyBertrand/mayfly-demo` | `smoke`, `long`, `runners`, `check-clean` |
+| `DEMO_REPO` | `TeddyBertrand/mayfly-demo` | `smoke`, `long`, `runners`, `check-clean`, `classic-up`, `classic-down` |
 
 Only the key's **path** is passed on the command line, never its contents, so the key does not show up in shell history or `ps`. The other `MAYFLY_*` settings (worker timeout, reaper interval, max age...) are read straight from the environment by the binaries; see the tables in [local-dev.md](local-dev.md).
 
@@ -61,7 +63,11 @@ Mayfly never starts a job itself: GitHub does, when a workflow asks for a runner
 
 - **`workers`**: `docker ps -a` filtered on the `mayfly.job_id` label, showing each container's runner name and `mayfly.owner`, the instance ID of the mayfly that started it. After a crash and restart, the owner shown here no longer matches the instance ID in the new mayfly's logs; that mismatch is what the reaper acts on (decision 012).
 - **`runners`**: the runner registrations GitHub holds for `DEMO_REPO`, as `id name status busy`. A healthy idle system shows nothing: JIT runners remove their registration when their job ends.
-- **`check-clean`**: counts both and prints them, then fails unless both are zero. This is the "nothing left behind" check from the brief. It also fails, with `cannot reach Docker` or `cannot reach GitHub`, when it cannot look: a check that cannot see must not report "clean".
+- **`check-clean`**: counts both and prints them, then fails unless both are zero. Only registrations named `mayfly-…` count, so the benchmark's stock runner (`classic-runner`) does not make it fail. This is the "nothing left behind" check from the brief. It also fails, with `cannot reach Docker` or `cannot reach GitHub`, when it cannot look: a check that cannot see must not report "clean".
+
+## Bench targets
+
+- **`classic-up`** and **`classic-down`**: run [scripts/classic-runner.sh](../scripts/classic-runner.sh), which manages the stock long-lived runner used as the third runner type in [benchmarks.md](benchmarks.md#runner-types). `up` creates the `mayfly-workers` network if needed, registers the runner once with a one-hour registration token from `gh`, and starts the `classic` Compose service. `down` stops it, removes its registration and deletes its volume, which also drops its tool cache.
 
 ## Recipes
 
