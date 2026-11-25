@@ -3,54 +3,15 @@ package reaper
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
-	"strings"
 	"time"
 
 	"github.com/TeddyBertrand/Mayfly/internal/github"
 	"github.com/TeddyBertrand/Mayfly/internal/logkey"
 	"github.com/TeddyBertrand/Mayfly/internal/metrics"
 	"github.com/TeddyBertrand/Mayfly/internal/worker"
-	"github.com/TeddyBertrand/Mayfly/internal/workflow"
 )
-
-// Reasons a worker is removed, as logged and returned by Sweep.
-const (
-	ReasonMaxAge           = "max age exceeded"
-	ReasonOwnerGone        = "owner instance gone"
-	ReasonOwnerUnreachable = "owner unreachable"
-	ReasonRunnerGone       = "runner registration gone"
-	ReasonRunnerOffline    = "runner offline"
-
-	// ReasonMayflyUnreachable and ReasonNotPickedUp explain a stuck job.
-	ReasonMayflyUnreachable = "mayfly unreachable"
-	ReasonNotPickedUp       = "not picked up: mayfly is up but no runner took the job, check its logs for this job"
-)
-
-// reasonLabels are the short reason label values on the reaper metrics, one per reason above.
-var reasonLabels = map[string]string{
-	ReasonMaxAge:            "max_age",
-	ReasonOwnerGone:         "owner_gone",
-	ReasonOwnerUnreachable:  "owner_unreachable",
-	ReasonRunnerGone:        "runner_gone",
-	ReasonRunnerOffline:     "runner_offline",
-	ReasonMayflyUnreachable: "mayfly_unreachable",
-	ReasonNotPickedUp:       "not_picked_up",
-}
-
-// presetReasons starts every reason series at 0, so increase() also counts the first removal or stuck job of each kind.
-func presetReasons(m *metrics.Reaper) {
-	for _, r := range []string{ReasonMaxAge, ReasonOwnerGone, ReasonOwnerUnreachable, ReasonRunnerGone, ReasonRunnerOffline} {
-		metrics.Preset(m.WorkersRemoved, reasonLabels[r])
-	}
-	for _, r := range []string{ReasonMayflyUnreachable, ReasonNotPickedUp} {
-		metrics.Preset(m.StuckJobs, reasonLabels[r])
-	}
-}
 
 // GitHub is what the reaper reads and deletes on GitHub.
 type GitHub interface {
@@ -194,149 +155,4 @@ func (r *Reaper) Sweep(ctx context.Context) (Report, error) {
 	rep.Deregistered = r.sweepRegistrations(ctx, repos, claimed)
 	rep.Stuck = r.sweepStuck(ctx, repos, ownerErr)
 	return rep, nil
-}
-
-// sweepRegistrations deletes mayfly registrations that stayed offline, with no container claiming them,
-// for StaleAfter. claimed holds the runner IDs of containers still alive after the container pass.
-func (r *Reaper) sweepRegistrations(ctx context.Context, repos []github.Repo, claimed map[int64]bool) []github.RunnerRegistration {
-	var deleted []github.RunnerRegistration
-	seen := map[int64]bool{}
-	for _, repo := range repos {
-		regs, err := r.gh.Runners(ctx, repo.InstallationID, repo.FullName)
-		if err != nil {
-			r.logger.Warn("runner list failed, registrations kept", logkey.Repo, repo.FullName, logkey.Err, err)
-			// Keep this repo's timers: a failed list says nothing about whether its runners recovered.
-			for id := range r.staleSince {
-				seen[id] = true
-			}
-			continue
-		}
-		for _, reg := range regs {
-			// Only names the provisioner generates; other self-hosted runners on the repo are never touched.
-			if !strings.HasPrefix(reg.Name, github.RunnerNamePrefix) || reg.Status != github.RunnerStatusOffline || claimed[reg.ID] {
-				continue
-			}
-			seen[reg.ID] = true
-			since, ok := r.staleSince[reg.ID]
-			if !ok {
-				r.staleSince[reg.ID] = r.now()
-				continue
-			}
-			if r.now().Sub(since) < r.opts.StaleAfter {
-				continue
-			}
-			log := r.logger.With(logkey.Repo, repo.FullName, logkey.RunnerID, reg.ID, logkey.RunnerName, reg.Name)
-			if err := r.gh.DeleteRunner(ctx, repo.InstallationID, repo.FullName, reg.ID); err != nil {
-				log.Error("stale registration delete failed", logkey.Err, err)
-				continue
-			}
-			r.metrics.RegistrationsRemoved.Inc()
-			log.Info("stale registration removed", logkey.StaleFor, r.now().Sub(since).Round(time.Second).String())
-			delete(r.staleSince, reg.ID)
-			deleted = append(deleted, reg)
-		}
-	}
-	// A registration that came online, got a container or disappeared starts its window over if it goes stale again.
-	for id := range r.staleSince {
-		if !seen[id] {
-			delete(r.staleSince, id)
-		}
-	}
-	return deleted
-}
-
-// sweepStuck logs, once each, mayfly jobs queued for longer than StuckAfter, with a reason based on the owner probe.
-func (r *Reaper) sweepStuck(ctx context.Context, repos []github.Repo, ownerErr error) []Stuck {
-	var stuck []Stuck
-	queued := map[int64]bool{}
-	for _, repo := range repos {
-		jobs, err := r.gh.QueuedJobs(ctx, repo.InstallationID, repo.FullName)
-		if err != nil {
-			r.logger.Warn("queued job list failed", logkey.Repo, repo.FullName, logkey.Err, err)
-			for id := range r.reported {
-				queued[id] = true
-			}
-			continue
-		}
-		for _, j := range jobs {
-			if !workflow.MatchesLabels(j.Labels, r.opts.Labels) {
-				continue
-			}
-			queued[j.ID] = true
-			age := r.now().Sub(j.CreatedAt)
-			if age < r.opts.StuckAfter || r.reported[j.ID] {
-				continue
-			}
-			reason := ReasonNotPickedUp
-			if ownerErr != nil {
-				reason = ReasonMayflyUnreachable
-			}
-			r.reported[j.ID] = true
-			r.metrics.StuckJobs.WithLabelValues(reasonLabels[reason]).Inc()
-			r.logger.Warn("job stuck in queued", logkey.Repo, repo.FullName, logkey.JobID, j.ID, logkey.JobName, j.Name,
-				logkey.Age, age.Round(time.Second).String(), logkey.Reason, reason, logkey.URL, j.URL)
-			stuck = append(stuck, Stuck{Repo: repo.FullName, Job: j, Reason: reason})
-		}
-	}
-	for id := range r.reported {
-		if !queued[id] {
-			delete(r.reported, id)
-		}
-	}
-	return stuck
-}
-
-// reason returns why w should be removed, or "" to keep it. live and ownerErr are this cycle's owner probe.
-func (r *Reaper) reason(ctx context.Context, w worker.Info, live string, ownerErr error) string {
-	age := r.now().Sub(w.Created)
-	switch {
-	case age > r.opts.MaxAge:
-		return ReasonMaxAge
-	case ownerErr == nil && w.Owner != live:
-		return ReasonOwnerGone
-	case ownerErr != nil && r.missed >= r.opts.MissedProbes:
-		return ReasonOwnerUnreachable
-	}
-	if age < r.opts.Grace || w.RunnerID == 0 || w.Repo == "" {
-		return ""
-	}
-	runner, err := r.gh.Runner(ctx, w.InstallationID, w.Repo, w.RunnerID)
-	switch {
-	case err != nil:
-		r.logger.Warn("runner lookup failed, worker kept", logkey.ContainerID, worker.ShortID(w.ID), logkey.Err, err)
-		return ""
-	case !runner.Found:
-		return ReasonRunnerGone
-	case runner.Status == github.RunnerStatusOffline:
-		return ReasonRunnerOffline
-	}
-	return ""
-}
-
-// HealthOwner returns an Owner that reads the instance ID from the mayfly /healthz endpoint at url.
-func HealthOwner(client *http.Client, url string) Owner {
-	return func(ctx context.Context) (string, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return "", err
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return "", err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("healthz: status %d", resp.StatusCode)
-		}
-		var h struct {
-			Instance string `json:"instance"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&h); err != nil {
-			return "", fmt.Errorf("healthz: %w", err)
-		}
-		if h.Instance == "" {
-			return "", errors.New("healthz: no instance in response")
-		}
-		return h.Instance, nil
-	}
 }
