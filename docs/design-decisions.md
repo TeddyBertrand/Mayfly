@@ -269,3 +269,19 @@ Each entry records one decision, the options considered and the consequences. En
   - Costs: each release rebuilds and pushes about 2.8 GB (layer caching with `type=gha` softens it), and a toolchain bump needs a Mayfly release. The label values are build arguments, so they must stay equal to the pins in the Dockerfile.
   - Images are only pushed from `main`, so an Azure benchmark of the image alone has to wait for a release or for a manual publish path, such as a `workflow_dispatch` that pushes a pre-release tag. That is not decided here.
   - Revisit if releases become frequent enough that the image size slows them down, or if toolchain bumps need to ship between Mayfly releases.
+
+## 024. Default worker image derived from the binary's version
+- **Date:** 2026-11-25
+- **Status:** accepted
+- **Context:** #27. Decision 023 publishes `mayfly-worker:<VERSION>` with each release, but `DefaultWorkerImage` was a hard-coded constant, so a release would keep using the stock runner image unless someone remembered to change it. The binary already knows its release version (`main.version`, stamped at build time, `dev` otherwise), and the registry has no `mayfly-worker:dev`.
+- **Options considered:**
+  - **A. Derive from the version, `dev` falls back to the stock runner:** a release defaults to `ghcr.io/teddybertrand/mayfly-worker:<version>`, a development build keeps `actions-runner`. No tag to sync by hand, and `make dev` needs no image build. A local run differs from production unless `MAYFLY_WORKER_IMAGE` is set.
+  - **B. Derive from the version, `dev` uses `mayfly-worker:dev`:** dev and release behave the same, but `make dev` needs a 2.8 GB local build first and fails slowly at the first job when it is missing.
+  - **C. Hard-coded constant bumped each release:** the smallest code, but a pin to sync by hand, which decision 023 set out to remove.
+  - **D. No default, `MAYFLY_WORKER_IMAGE` required:** nothing implicit, but it breaks `make dev` and moves the same sync problem into Compose and Terraform.
+- **Decision:** A. `MAYFLY_WORKER_IMAGE` still overrides everything, and the chosen image is logged at startup.
+- **Consequences:**
+  - Terraform's `mayfly_version` picks the Mayfly image and, through its binary, the worker image, so the two cannot drift.
+  - A local `make dev` runs the stock image, without the baked toolchains, unless `MAYFLY_WORKER_IMAGE=mayfly-worker:dev` is set after `docker build`; the startup log shows which one is in use.
+  - The `classic` runner in `compose.yaml` still uses the stock image, so "same image as Mayfly's workers" in `docs/benchmarks.md` no longer holds; whether `classic` moves to the baked image is decided with the benchmark (#31).
+  - A new ghcr.io package is private by default, so the deploy host may need access to pull `mayfly-worker` before the first benchmark.
