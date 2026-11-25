@@ -250,12 +250,12 @@ Publish v0.3.0 (decision 010) so `main` ships the end of M3: the benchmark demo 
 
 ## M3.5 - Code Refacto
 
-### [ci] Release v0.3.5 (#127)
+### **done** [ci] Release v0.3.5 (#127)
 Publish v0.3.5 (decision 010) so `main` ships the end of M3.5: the reaper split into one file per job, the startup and metrics helpers moved out of `main.go` and `provisioner.go`, and the file-by-file architecture guide (`docs/architecture.md`). One minor version per milestone, so the M3.5 refactor ships as 0.3.5, as M2.5 did with 0.2.5. No behaviour change since 0.3.0: the Go changes only move code between files, so the runtime image is functionally the same as 0.3.0 and this is a milestone marker. Moves the Terraform default `mayfly_version` to `0.3.5` to keep it aligned. Also marks the v0.3.0 release (#118) done in the draft, checked against the published release, the image manifest and `mayfly --version`.
-- [ ] `VERSION` is `0.3.5` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.3.5` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.3.5` published for amd64 and arm64
-- [ ] `mayfly --version` in the image prints `0.3.5`
+- [x] `VERSION` is `0.3.5` on `dev` and merged into `main`
+- [x] GitHub Release `v0.3.5` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.3.5` published for amd64 and arm64
+- [x] `mayfly --version` in the image prints `0.3.5`
 - [x] Terraform default `mayfly_version` is `0.3.5`
 
 ## M4 - Optimization: startup
