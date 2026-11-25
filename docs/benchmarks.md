@@ -93,7 +93,67 @@ Five runs ended `timed_out` with no job and no runner (one of them a warm-up run
 
 `mayfly` on `go-build` in run B has a 108 s outlier (the median stays 57 s), which is why the median, not the mean, is the headline number.
 
-These local numbers check the harness, not Mayfly: the baseline on the 2 vCPU Azure host is #26.
+These local numbers check the harness, not Mayfly: the baseline on the 2 vCPU Azure host is below.
+
+## Baseline of 2026-11-25 (Azure, unoptimized Mayfly)
+
+The starting point every M4 and M5 optimization is measured against.
+
+| | |
+|---|---|
+| Host | Azure `Standard_B2als_v2` (2 vCPU AMD, 4 GB), Denmark East, one Docker host (`MAYFLY_WORKERS=1`) |
+| Mayfly | image `0.2.6`, no optimization: fresh worker per job, nothing cached, `setup-go` and `setup-node` download their toolchain every run |
+| Harness | commit `436bba6`, `hosted,mayfly`, 2 warm-up + 10 measured iterations per cell |
+| Runs | two full runs one after the other: [a](../bench/results/2026-11-25-azure-a.md) ([CSV](../bench/results/2026-11-25-azure-a.csv)) and [b](../bench/results/2026-11-25-azure-b.md) ([CSV](../bench/results/2026-11-25-azure-b.csv)); 0 failed jobs out of 96 |
+
+Median total time (queue + boot + steps), run A and run B:
+
+| workflow | runner | A | B | change |
+|---|---|---|---|---|
+| go-build | hosted | 46.5s | 47s | 1.1% |
+| go-build | mayfly | 85s | 85.5s | 0.6% |
+| npm-test | hosted | 11s | 13s | 18.2% |
+| npm-test | mayfly | 31s | 32s | 3.2% |
+
+First step starts after (median, A / B): hosted 5-5.5s, mayfly 9.5-10s. Queue time: hosted 3s, mayfly 7s.
+
+Mayfly is about 1.8x slower than hosted on `go-build` and about 2.8x on `npm-test`. That is the gap M4 and M5 have to close.
+
+### Repeatability
+
+`bench compare` exits with status 2: three cells are within ±10% (0.6% to 3.2%), but hosted `npm-test` moved 18.2%. That is 2 s on an 11-13 s job, so it is close to the 1 s timestamp resolution, and it is on the hosted side, which Mayfly does not control (its own `npm-test` cell moved 3.2%). The Mayfly cells, the ones the baseline is for, repeat well: `go-build` ran between 84 s and 90 s over 20 measured jobs. The claim therefore holds for Mayfly and fails for one noisy hosted cell. The tolerance stays at 10%.
+
+### CPU credits: no throttling
+
+B-series VMs earn CPU credits while idle and spend them under load; an empty balance throttles the VM to its baseline share of CPU and would make a long benchmark look slow for the wrong reason. Azure Monitor shows the balance over the two runs (07:35 to 09:20 UTC):
+
+| metric | value |
+|---|---|
+| CPU Credits Remaining | 60.8 at the start, 67.3 at the end, rising |
+| Average CPU | 24-31% |
+
+The balance never dropped, so the VM was not throttled and the numbers measure Mayfly, not the VM size.
+
+### Why `go-build` is slower on Mayfly
+
+Step durations of one job per runner type (run A), in seconds:
+
+| step | hosted | mayfly |
+|---|---|---|
+| `actions/setup-go` | 7 | 34 |
+| `go build` | 16 | 23 |
+| `go vet` | 4 | 7 |
+| `go test` | 4 | 6 |
+| everything else | 9 | 5 |
+
+Two causes, both visible here:
+
+1. **Toolchain download.** A hosted runner ships Go and Node in its tool cache, so `setup-go` takes 7 s and `setup-node` under 1 s. A fresh Mayfly worker has an empty cache and downloads the toolchain each time: 34 s for Go, 15 s for Node. This is about 27 s of the 38 s `go-build` gap and about 15 s of the 20 s `npm-test` gap. It is the price of a clean environment per job, and it is what the pre-baked worker image (M4) targets.
+2. **Slower CPU.** The same compile steps take about 1.5x longer (`go build` 16 s against 23 s). The host has 2 shared vCPUs and the worker shares them with the reaper, Prometheus and Grafana. Locally, on 20 cores, `go-build` on Mayfly took 55 s against 50 s hosted.
+
+Boot adds about 4 s (queue 7 s against 3 s, first step 10 s against 5.5 s): the container start and the runner registering.
+
+This breakdown comes from one job per runner type in run A, so it shows where the time goes, not an exact split.
 
 ## Running it
 
