@@ -26,13 +26,14 @@ type ProvisionerConfig struct {
 }
 
 // LoadProvisioner reads the provisioner settings through getenv and readFile, applying defaults
-// and returning an error on missing or invalid values.
-func LoadProvisioner(getenv func(string) string, readFile func(string) ([]byte, error)) (ProvisionerConfig, error) {
+// and returning an error on missing or invalid values. version is the binary's release version,
+// which picks the default worker image.
+func LoadProvisioner(getenv func(string) string, readFile func(string) ([]byte, error), version string) (ProvisionerConfig, error) {
 	app, err := LoadGitHubApp(getenv, readFile)
 	if err != nil {
 		return ProvisionerConfig{}, err
 	}
-	cfg := ProvisionerConfig{App: app, Docker: loadDocker(getenv), WorkerImage: DefaultWorkerImage}
+	cfg := ProvisionerConfig{App: app, Docker: loadDocker(getenv), WorkerImage: DefaultWorkerImage(version)}
 
 	if v := getenv("MAYFLY_WORKER_IMAGE"); v != "" {
 		cfg.WorkerImage = v

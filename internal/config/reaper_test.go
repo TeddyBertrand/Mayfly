@@ -66,7 +66,7 @@ func TestLoadReaperIgnoresProvisionerSettings(t *testing.T) {
 	}
 	getenv := func(k string) string { return env[k] }
 
-	if _, err := LoadProvisioner(getenv, files); err == nil {
+	if _, err := LoadProvisioner(getenv, files, DevVersion); err == nil {
 		t.Fatal("LoadProvisioner accepted invalid provisioner settings, so this test proves nothing")
 	}
 	if _, err := LoadReaper(getenv, files); err != nil {

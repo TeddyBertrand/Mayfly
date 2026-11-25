@@ -261,8 +261,9 @@ Publish v0.3.5 (decision 010) so `main` ships the end of M3.5: the reaper split 
 ## M4 - Optimization: startup
 
 ### [worker] Pre-baked worker image
-Image with common toolchains (Go, Node, Python) and frequently used Docker images already pulled. Reproducible build, versioned tags.
-- [ ] Boot-to-first-step time measured before and after
+Image with common toolchains (Go, Node, Python) and frequently used Docker images already pulled. Reproducible build, versioned tags. The before and after measurement is done in the benchmark issue below.
+- [ ] Image published for amd64 and arm64 with versioned tags
+- [x] Mayfly uses it by default
 
 ### [worker] Warm pool of pre-started workers
 Keep N idle workers registered and waiting, claim one per job, and refill in the background. Must respect the one-job-per-worker rule and security isolation.
@@ -279,6 +280,7 @@ Add pool size, claim latency and pool-miss metrics to the dashboard.
 
 ### [bench] Benchmark: image and warm pool
 Run the harness for each step on its own and combined, and add rows to the table.
+- [ ] Image alone measured against the baseline (boot-to-first-step and total time), with the image size recorded
 - [ ] First step starts in under 10s (or the gap is explained)
 
 ## M5 - Optimization: caching and disk
