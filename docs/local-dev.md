@@ -93,7 +93,7 @@ Expected output (JSON, one line each): `server listening` twice (`"server":"webh
 | `MAYFLY_RUNNER_LABELS` | `mayfly` | Labels a job must request to be accepted (decision 007) |
 | `MAYFLY_WORKERS` | `2` | Jobs provisioned in parallel |
 | `MAYFLY_QUEUE_SIZE` | `100` | Jobs waiting before the receiver answers 503 |
-| `MAYFLY_WORKER_IMAGE` | `ghcr.io/actions/actions-runner:2.338.2` | Worker image |
+| `MAYFLY_WORKER_IMAGE` | `ghcr.io/teddybertrand/mayfly-worker:<version>` for a release, `ghcr.io/actions/actions-runner:2.338.2` for a development build (decision 024) | Worker image. To run the baked toolchains locally, build `images/worker` as `mayfly-worker:dev` and set this to it |
 | `MAYFLY_WORKER_NETWORK` | Docker default `bridge` | Docker network workers attach to; mayfly creates it (bridge interface of the same name) when missing |
 | `MAYFLY_WORKER_TIMEOUT` | `6h` | Maximum worker lifetime |
 | `MAYFLY_DOCKER_SOCKET` | `/var/run/docker.sock` | Docker daemon socket |
