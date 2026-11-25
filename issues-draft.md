@@ -283,6 +283,16 @@ Run the harness for each step on its own and combined, and add rows to the table
 - [ ] Image alone measured against the baseline (boot-to-first-step and total time), with the image size recorded
 - [ ] First step starts in under 10s (or the gap is explained)
 
+### [ci] Release v0.3.6
+Publish v0.3.6 (decision 010) so `main` ships the pre-baked worker image (#27, decisions 022 to 024) and the Azure benchmark of the image alone (#31) can pull it. A patch version, because it lands between milestones: 0.4.0 stays for the end of M4, once the warm pool exists. The release publishes `mayfly-worker:0.3.6` next to the `mayfly` image, and a 0.3.6 binary defaults to it. Moves the Terraform default `mayfly_version` to `0.3.6` to keep it aligned.
+- [ ] `VERSION` is `0.3.6` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.3.6` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.3.6` published for amd64 and arm64
+- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.3.6` published for amd64 and arm64
+- [ ] `mayfly --version` in the image prints `0.3.6`
+- [ ] The deploy host can pull `mayfly-worker` (package visibility checked)
+- [ ] Terraform default `mayfly_version` is `0.3.6`
+
 ## M5 - Optimization: caching and disk
 
 ### [infra] Local cache server for `actions/cache`
