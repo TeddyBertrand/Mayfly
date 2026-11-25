@@ -92,7 +92,7 @@ func TestDockerRunnerImage(t *testing.T) {
 	if os.Getenv("MAYFLY_DOCKER_TEST") != "1" {
 		t.Skip("set MAYFLY_DOCKER_TEST=1 to run the real runner image")
 	}
-	b, logs := realBackend(t, config.DefaultWorkerImage, nil, 5*time.Minute)
+	b, logs := realBackend(t, config.StockWorkerImage, nil, 5*time.Minute)
 	spec := uniqueSpec(t)
 	if err := b.Run(context.Background(), spec); err != nil {
 		t.Fatalf("run: %v\n%s", err, logs.String())

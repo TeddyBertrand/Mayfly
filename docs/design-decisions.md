@@ -239,3 +239,49 @@ Each entry records one decision, the options considered and the consequences. En
   - **B. An `observability` profile:** can be left off on 1 GB, but one more switch to explain.
 - **Decision:** A, A and A.
 - **Consequences:** Prometheus is never published; it scrapes `mayfly:8081` and `reaper:8082` over the Compose network (decisions 018 and 020). The Grafana login form is disabled, so the dashboard is changed in the repo, not in the UI; anyone with shell or SSH access to the host can see it, which is the same trust boundary as `docker compose logs`. Metrics live in a named volume and are lost when the VM is destroyed (decision 014), so screenshots and benchmark numbers must be captured before `terraform destroy`. A changed file under `infra/observability/` reaches the VM only on a new `terraform apply` that recreates it, as `compose.yaml` already does.
+
+## 022. Pre-baked worker image: toolchains in the runner tool cache
+- **Date:** 2026-11-25
+- **Status:** accepted
+- **Context:** #27. Workers run the stock `actions-runner` image (decision 009, overridable with `MAYFLY_WORKER_IMAGE`) and start with an empty `_work/_tool`, so `setup-go` and `setup-node` download their toolchain on every job. The Azure baseline (`bench/results/2026-11-25-azure-*`) shows Mayfly's first step already near 10 s, but `go-build` totals 85 s against 46.5 s hosted, so the gap is in the steps and not in startup. The image must keep one job per worker with nothing shared between jobs, and must be reproducible with versioned tags.
+- **Options considered:**
+  - **A. Custom image `FROM` the runner image, toolchains and tools baked in:** pinned toolchains go into the tool cache and common tools are installed. Each worker gets a fresh copy of a read-only layer, so nothing is shared. A job that asks for a version that is not baked downloads it as before.
+  - **B. Stock image plus a shared read-only tool-cache volume:** no image to build, but it is shared state between jobs and is populated outside the image, so it is less reproducible.
+  - **C. Clone of the hosted `ubuntu-24.04` image:** any workflow works unchanged, but it is tens of GB, slow to build and pull, and far beyond what this project's jobs use.
+- **Decision:** A, with a broad but bounded list chosen from the languages in the owner's repositories (TypeScript, Rust, Go, C++, C) and checked against GitHub's hosted-image software list. Starting list, to be adjusted: Go, Node (LTS and current), Rust stable with `clippy` and `rustfmt`, Python 3; `gcc`, `g++`, `clang`, `make`, `cmake`, `ninja`, `pkg-config`; `npm`, `pnpm`, `yarn`, `cargo`, `pip`; `git`, `curl`, `wget`, `jq`, `zip`, `unzip`, `tar`, `openssl`.
+- **Consequences:**
+  - Jobs that use a baked version skip the toolchain download. The image is a bet on common toolchains, not a promise that every job is faster; the long tail is left to the M5 cache and mirrors. Project packages (npm, Go modules, pip) and actions are not baked: they differ per repo and change with every lockfile.
+  - Cost: the image is large (Rust and C++ toolchains), so size, build time and first-pull time are part of the result and are recorded in the benchmark next to the gain. The first pull on a fresh host is slower; the harness warm-up runs absorb it. Every baked toolchain must also be rebuilt and re-pinned when it ages.
+  - The demo workloads only use Go and Node, so they cannot show a gain for Rust or C/C++. Proving that needs a Rust or C++ workload in `bench/demo`, which is a separate change.
+  - Revisit if the image grows past what the host disk or pull time tolerates, or if the benchmark shows the download was not the main cost of the slow steps.
+
+## 023. Worker image released with Mayfly, same version, contents in labels
+- **Date:** 2026-11-25
+- **Status:** accepted
+- **Context:** #27. The worker image of decision 022 must be published with versioned tags. Decision 010 already releases `v<VERSION>` on push to `main` and publishes the Mayfly image once per tag. The worker image is much larger (about 2.8 GB) and its default name must not drift from what a release ships.
+- **Options considered:**
+  - **A. Same version as Mayfly, built by the release workflow:** `ghcr.io/teddybertrand/mayfly-worker:<VERSION>` and `:latest`, as a job next to the Mayfly image, under the same tag-exists check. One version to bump and one idempotent release. The tag does not show what is inside, and every release rebuilds and pushes the image.
+  - **B. Its own tag from its contents** (for example `2.338.2-go1.27.4-node24.22.3`): self-describing, and it only changes with its contents. It needs a second release path and tag-exists check, a tag cannot capture the whole tool list without a revision suffix, and Mayfly still has to be told which tag to use.
+  - **C. Immutable digest only:** exact and tamper-proof, but unreadable and copied into every config by hand or by tooling.
+- **Decision:** A. The base runner version, the Go version and the Node version are recorded as image labels, so `docker inspect` shows what is inside without a second version scheme.
+- **Consequences:**
+  - The release workflow gets a worker image job for linux/amd64 and linux/arm64, with the same push condition as the Mayfly image (push to `main`, tag not yet existing), and Terraform's `mayfly_version` default keeps following `VERSION` as before. The default worker image can be derived from the binary's own version, as `main.version` is, so `DefaultWorkerImage` no longer needs a hand-synced tag; `MAYFLY_WORKER_IMAGE` still overrides it.
+  - Costs: each release rebuilds and pushes about 2.8 GB (layer caching with `type=gha` softens it), and a toolchain bump needs a Mayfly release. The label values are build arguments, so they must stay equal to the pins in the Dockerfile.
+  - Images are only pushed from `main`, so an Azure benchmark of the image alone has to wait for a release or for a manual publish path, such as a `workflow_dispatch` that pushes a pre-release tag. That is not decided here.
+  - Revisit if releases become frequent enough that the image size slows them down, or if toolchain bumps need to ship between Mayfly releases.
+
+## 024. Default worker image derived from the binary's version
+- **Date:** 2026-11-25
+- **Status:** accepted
+- **Context:** #27. Decision 023 publishes `mayfly-worker:<VERSION>` with each release, but `DefaultWorkerImage` was a hard-coded constant, so a release would keep using the stock runner image unless someone remembered to change it. The binary already knows its release version (`main.version`, stamped at build time, `dev` otherwise), and the registry has no `mayfly-worker:dev`.
+- **Options considered:**
+  - **A. Derive from the version, `dev` falls back to the stock runner:** a release defaults to `ghcr.io/teddybertrand/mayfly-worker:<version>`, a development build keeps `actions-runner`. No tag to sync by hand, and `make dev` needs no image build. A local run differs from production unless `MAYFLY_WORKER_IMAGE` is set.
+  - **B. Derive from the version, `dev` uses `mayfly-worker:dev`:** dev and release behave the same, but `make dev` needs a 2.8 GB local build first and fails slowly at the first job when it is missing.
+  - **C. Hard-coded constant bumped each release:** the smallest code, but a pin to sync by hand, which decision 023 set out to remove.
+  - **D. No default, `MAYFLY_WORKER_IMAGE` required:** nothing implicit, but it breaks `make dev` and moves the same sync problem into Compose and Terraform.
+- **Decision:** A. `MAYFLY_WORKER_IMAGE` still overrides everything, and the chosen image is logged at startup.
+- **Consequences:**
+  - Terraform's `mayfly_version` picks the Mayfly image and, through its binary, the worker image, so the two cannot drift.
+  - A local `make dev` runs the stock image, without the baked toolchains, unless `MAYFLY_WORKER_IMAGE=mayfly-worker:dev` is set after `docker build`; the startup log shows which one is in use.
+  - The `classic` runner in `compose.yaml` still uses the stock image, so "same image as Mayfly's workers" in `docs/benchmarks.md` no longer holds; whether `classic` moves to the baked image is decided with the benchmark (#31).
+  - A new ghcr.io package is private by default, so the deploy host may need access to pull `mayfly-worker` before the first benchmark.

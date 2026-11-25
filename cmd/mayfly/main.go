@@ -50,10 +50,11 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	pcfg, err := config.LoadProvisioner(os.Getenv, os.ReadFile)
+	pcfg, err := config.LoadProvisioner(os.Getenv, os.ReadFile, version)
 	if err != nil {
 		return err
 	}
+	logger.Info("worker image selected", logkey.Image, pcfg.WorkerImage)
 	key, err := github.ParsePrivateKey(pcfg.App.Key)
 	if err != nil {
 		return err
