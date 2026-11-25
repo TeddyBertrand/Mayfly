@@ -5,8 +5,27 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"time"
+
+	"github.com/TeddyBertrand/Mayfly/internal/config"
 )
+
+// healthcheckTimeout keeps the container healthcheck well under Compose's 5s probe timeout.
+const healthcheckTimeout = 3 * time.Second
+
+// runHealthcheck probes this host's ops listener at MAYFLY_OPS_ADDR and returns the process exit code.
+func runHealthcheck() int {
+	url, err := healthURL(config.LoadOpsAddr(os.Getenv))
+	if err == nil {
+		err = healthcheck(url, healthcheckTimeout)
+	}
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "healthcheck:", err)
+		return 1
+	}
+	return 0
+}
 
 // healthURL returns the /healthz URL for an ops listener on listenAddr, dialling loopback
 // when the host part is empty or a wildcard.
