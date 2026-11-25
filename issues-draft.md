@@ -263,7 +263,7 @@ Publish v0.3.5 (decision 010) so `main` ships the end of M3.5: the reaper split 
 ### [worker] Pre-baked worker image
 Image with common toolchains (Go, Node, Python) and frequently used Docker images already pulled. Reproducible build, versioned tags. The before and after measurement is done in the benchmark issue below.
 - [ ] Image published for amd64 and arm64 with versioned tags
-- [ ] Mayfly uses it by default
+- [x] Mayfly uses it by default
 
 ### [worker] Warm pool of pre-started workers
 Keep N idle workers registered and waiting, claim one per job, and refill in the background. Must respect the one-job-per-worker rule and security isolation.
