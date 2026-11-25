@@ -239,3 +239,18 @@ Each entry records one decision, the options considered and the consequences. En
   - **B. An `observability` profile:** can be left off on 1 GB, but one more switch to explain.
 - **Decision:** A, A and A.
 - **Consequences:** Prometheus is never published; it scrapes `mayfly:8081` and `reaper:8082` over the Compose network (decisions 018 and 020). The Grafana login form is disabled, so the dashboard is changed in the repo, not in the UI; anyone with shell or SSH access to the host can see it, which is the same trust boundary as `docker compose logs`. Metrics live in a named volume and are lost when the VM is destroyed (decision 014), so screenshots and benchmark numbers must be captured before `terraform destroy`. A changed file under `infra/observability/` reaches the VM only on a new `terraform apply` that recreates it, as `compose.yaml` already does.
+
+## 022. Pre-baked worker image: toolchains in the runner tool cache
+- **Date:** 2026-11-25
+- **Status:** accepted
+- **Context:** #27. Workers run the stock `actions-runner` image (decision 009, overridable with `MAYFLY_WORKER_IMAGE`) and start with an empty `_work/_tool`, so `setup-go` and `setup-node` download their toolchain on every job. The Azure baseline (`bench/results/2026-11-25-azure-*`) shows Mayfly's first step already near 10 s, but `go-build` totals 85 s against 46.5 s hosted, so the gap is in the steps and not in startup. The image must keep one job per worker with nothing shared between jobs, and must be reproducible with versioned tags.
+- **Options considered:**
+  - **A. Custom image `FROM` the runner image, toolchains and tools baked in:** pinned toolchains go into the tool cache and common tools are installed. Each worker gets a fresh copy of a read-only layer, so nothing is shared. A job that asks for a version that is not baked downloads it as before.
+  - **B. Stock image plus a shared read-only tool-cache volume:** no image to build, but it is shared state between jobs and is populated outside the image, so it is less reproducible.
+  - **C. Clone of the hosted `ubuntu-24.04` image:** any workflow works unchanged, but it is tens of GB, slow to build and pull, and far beyond what this project's jobs use.
+- **Decision:** A, with a broad but bounded list chosen from the languages in the owner's repositories (TypeScript, Rust, Go, C++, C) and checked against GitHub's hosted-image software list. Starting list, to be adjusted: Go, Node (LTS and current), Rust stable with `clippy` and `rustfmt`, Python 3; `gcc`, `g++`, `clang`, `make`, `cmake`, `ninja`, `pkg-config`; `npm`, `pnpm`, `yarn`, `cargo`, `pip`; `git`, `curl`, `wget`, `jq`, `zip`, `unzip`, `tar`, `openssl`.
+- **Consequences:**
+  - Jobs that use a baked version skip the toolchain download. The image is a bet on common toolchains, not a promise that every job is faster; the long tail is left to the M5 cache and mirrors. Project packages (npm, Go modules, pip) and actions are not baked: they differ per repo and change with every lockfile.
+  - Cost: the image is large (Rust and C++ toolchains), so size, build time and first-pull time are part of the result and are recorded in the benchmark next to the gain. The first pull on a fresh host is slower; the harness warm-up runs absorb it. Every baked toolchain must also be rebuilt and re-pinned when it ages.
+  - The demo workloads only use Go and Node, so they cannot show a gain for Rust or C/C++. Proving that needs a Rust or C++ workload in `bench/demo`, which is a separate change.
+  - Revisit if the image grows past what the host disk or pull time tolerates, or if the benchmark shows the download was not the main cost of the slow steps.
