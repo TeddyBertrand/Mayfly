@@ -3,7 +3,7 @@ ARG RUNNER_VERSION=2.338.2
 ARG GO_VERSION=1.27.4
 ARG NODE_VERSION=24.22.3
 
-FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION} AS toolchains
+FROM --platform=$BUILDPLATFORM ghcr.io/actions/actions-runner:${RUNNER_VERSION} AS toolchains
 ARG TARGETARCH
 ARG TOOL_CACHE=/opt/hostedtoolcache
 ARG GO_VERSION
