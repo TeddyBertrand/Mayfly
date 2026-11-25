@@ -210,24 +210,43 @@ Panels: queue time, boot time, job duration, workers alive, failure rate. A cost
 
 ### **done** [ci] Release v0.2.6 (#111)
 Publish v0.2.6 (decision 010) so `main` ships the observability half of M3: Prometheus metrics in mayfly and the reaper (#21, decision 020), Prometheus and Grafana in the Compose deploy (#22, decision 021) and the Mayfly dashboard (#23). Moves the Terraform default `mayfly_version` to `0.2.6` in the same change, because Terraform deploys the working-tree `compose.yaml`, which now runs Prometheus against `/metrics` endpoints only the 0.2.6 image serves. Also marks the v0.2.5 release (#105) done in the draft, checked against the published release, the image manifest and `mayfly --version`.
-- [ ] `VERSION` is `0.2.6` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.2.6` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.2.6` published for amd64 and arm64
-- [ ] `mayfly --version` in the image prints `0.2.6`
+- [x] `VERSION` is `0.2.6` on `dev` and merged into `main`
+- [x] GitHub Release `v0.2.6` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.2.6` published for amd64 and arm64
+- [x] `mayfly --version` in the image prints `0.2.6`
 - [x] Terraform default `mayfly_version` is `0.2.6`
 
-### [bench] Demo repo with benchmark workflows
+### **done** [bench] Demo repo with benchmark workflows (#24)
 Create a demo repo with realistic workflows (e.g. Go build and test, a Docker build, an npm install and test), all runnable on either hosted runners or Mayfly with one label change.
-- [ ] Workflows run on both runner types
+- [x] Workflows run on both runner types
 
-### [bench] Benchmark harness and methodology
+`go-build` and `npm-test` ship; the canonical copy is in `bench/demo/` (`docs/demo-repo.md`). The Docker build is deferred: workers have no Docker daemon (decision 015), so it would only pass on hosted runners.
+
+### **done** [bench] Benchmark harness and methodology (#25)
 Script that triggers N runs, collects timings through the API (queue time, first-step time, total time), and outputs CSV plus a summary. Document warm-up, run count, and how medians are computed.
-- [ ] Methodology in `docs/benchmarks.md`
-- [ ] Re-running gives results within a stated variance
+- [x] Methodology in `docs/benchmarks.md`
+- [x] Re-running gives results within a stated variance
 
-### [bench] Baseline results
+### [bench] Baseline results (#26, closed, superseded by #116)
 Run the harness on GitHub-hosted runners and on unoptimized Mayfly. Record both in the benchmark table.
+The first attempt on the Azure host was stopped after 25 of 48 jobs, too little to publish; the full run moved to #116.
 - [ ] Table committed with date, host size and commit SHA
+
+### **done** [bench] Azure baseline on the 2 vCPU host (#116)
+Two full runs (`azure-a`, `azure-b`) of `hosted,mayfly` on `Standard_B2als_v2`, about 2 hours on the VM. Compare the runs, check the VM's CPU credits, explain the slow `go-build` on Azure, then record the baseline table.
+- [x] Two full runs committed in `bench/results/`
+- [x] `bench compare` result between the two runs recorded
+- [x] CPU credit metric of the VM checked during the runs and the result noted
+- [x] Cause of the slow `go-build` explained, or listed as open
+- [x] Baseline table in `docs/benchmarks.md` and the README with date, host size, Mayfly image version and commit SHA
+
+### [ci] Release v0.3.0 (#118)
+Publish v0.3.0 (decision 010) so `main` ships the end of M3: the benchmark demo workloads (#24), the `bench` harness and `classic` runner (#25) and the Azure baseline (#116). One minor version per milestone, so M3 gets 0.3.0 and the M3.5 refactor will ship as 0.3.5, as M2.5 did with 0.2.5. The runtime image is functionally the same as 0.2.6 (nothing under `cmd/mayfly`, the reaper, `compose.yaml` or the Dockerfile changed since), so this is a milestone marker. Moves the Terraform default `mayfly_version` to `0.3.0` to keep it aligned. Also marks the v0.2.6 release (#111) done in the draft, checked against the published release, the image manifest and `mayfly --version`.
+- [ ] `VERSION` is `0.3.0` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.3.0` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.3.0` published for amd64 and arm64
+- [ ] `mayfly --version` in the image prints `0.3.0`
+- [x] Terraform default `mayfly_version` is `0.3.0`
 
 ## M4 - Optimization: startup
 
