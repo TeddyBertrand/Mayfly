@@ -12,6 +12,8 @@ GitHub --webhook--> RECEIVER --> PROVISIONER --> WORKER (1 job, then destroyed)
 
 The worker is a container or VM, not Go code in this repo, so it has no `cmd/` folder.
 
+This page is the overview. [architecture.md](architecture.md) goes down to the files: a reading order, one job's full path with its failure and cleanup branches, and every Go file explained.
+
 ## Receiver
 
 The front door. A small HTTP server that receives `workflow_job` webhooks and decides whether a worker is needed.
