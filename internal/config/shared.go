@@ -12,8 +12,12 @@ const (
 	DefaultGitHubAPIURL = "https://api.github.com"
 	// DefaultDockerSocket is where the Docker daemon listens on Linux.
 	DefaultDockerSocket = "/var/run/docker.sock"
-	// DefaultWorkerImage is the official runner image, pinned to an exact release.
-	DefaultWorkerImage = "ghcr.io/actions/actions-runner:2.338.2"
+	// StockWorkerImage is the official runner image, pinned to an exact release (decision 009).
+	StockWorkerImage = "ghcr.io/actions/actions-runner:2.338.2"
+	// WorkerImageRepo is where each release publishes its worker image, tagged with the release version (decision 023).
+	WorkerImageRepo = "ghcr.io/teddybertrand/mayfly-worker"
+	// DevVersion is the version of a build that was not stamped with a release version.
+	DevVersion = "dev"
 	// DefaultWorkerTimeout matches GitHub's maximum job duration.
 	DefaultWorkerTimeout = 6 * time.Hour
 	// DefaultOpsAddr keeps the ops endpoints on loopback unless a deploy says otherwise (decision 018).
@@ -23,6 +27,15 @@ const (
 	// DefaultReaperOpsAddr is the reaper's own ops listener, one port above mayfly's so both fit on one host (decision 020).
 	DefaultReaperOpsAddr = "127.0.0.1:8082"
 )
+
+// DefaultWorkerImage returns the worker image a binary of the given version uses unless overridden:
+// the image released with that version, or the stock runner image for a development build (decision 024).
+func DefaultWorkerImage(version string) string {
+	if version == "" || version == DevVersion {
+		return StockWorkerImage
+	}
+	return WorkerImageRepo + ":" + version
+}
 
 // LoadOpsAddr returns the address of mayfly's ops listener, which serves /healthz and /metrics and must never be published.
 func LoadOpsAddr(getenv func(string) string) string {

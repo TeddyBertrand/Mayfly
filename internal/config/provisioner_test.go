@@ -8,6 +8,7 @@ import (
 
 // TestLoadProvisioner checks defaults, overrides and rejection of missing or invalid values.
 func TestLoadProvisioner(t *testing.T) {
+	const testVersion = "0.4.0"
 	files := fakeFS(map[string]string{"/key.pem": "PEM-BYTES\n"})
 	base := map[string]string{"MAYFLY_APP_ID": "5714458", "MAYFLY_APP_KEY_FILE": "/key.pem"}
 	with := func(extra map[string]string) map[string]string {
@@ -32,7 +33,7 @@ func TestLoadProvisioner(t *testing.T) {
 			env:  base,
 			want: ProvisionerConfig{
 				App:    GitHubApp{ID: 5714458, Key: []byte("PEM-BYTES"), APIURL: DefaultGitHubAPIURL},
-				Docker: Docker{Socket: DefaultDockerSocket}, WorkerImage: DefaultWorkerImage,
+				Docker: Docker{Socket: DefaultDockerSocket}, WorkerImage: WorkerImageRepo + ":" + testVersion,
 				WorkerTimeout: DefaultWorkerTimeout, Workers: 2, QueueSize: 100,
 			},
 		},
@@ -58,7 +59,7 @@ func TestLoadProvisioner(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := LoadProvisioner(func(k string) string { return tt.env[k] }, files)
+			got, err := LoadProvisioner(func(k string) string { return tt.env[k] }, files, testVersion)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
 			}

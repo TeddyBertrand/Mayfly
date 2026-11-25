@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"io"
+
+	"github.com/TeddyBertrand/Mayfly/internal/config"
 )
 
 // version is the release version, set at build time with -ldflags "-X main.version=<v>".
-var version = "dev"
+var version = config.DevVersion
 
 // printVersion writes the version to w and reports true when args ask for it.
 func printVersion(args []string, w io.Writer) bool {
