@@ -254,3 +254,18 @@ Each entry records one decision, the options considered and the consequences. En
   - Cost: the image is large (Rust and C++ toolchains), so size, build time and first-pull time are part of the result and are recorded in the benchmark next to the gain. The first pull on a fresh host is slower; the harness warm-up runs absorb it. Every baked toolchain must also be rebuilt and re-pinned when it ages.
   - The demo workloads only use Go and Node, so they cannot show a gain for Rust or C/C++. Proving that needs a Rust or C++ workload in `bench/demo`, which is a separate change.
   - Revisit if the image grows past what the host disk or pull time tolerates, or if the benchmark shows the download was not the main cost of the slow steps.
+
+## 023. Worker image released with Mayfly, same version, contents in labels
+- **Date:** 2026-11-25
+- **Status:** accepted
+- **Context:** #27. The worker image of decision 022 must be published with versioned tags. Decision 010 already releases `v<VERSION>` on push to `main` and publishes the Mayfly image once per tag. The worker image is much larger (about 2.8 GB) and its default name must not drift from what a release ships.
+- **Options considered:**
+  - **A. Same version as Mayfly, built by the release workflow:** `ghcr.io/teddybertrand/mayfly-worker:<VERSION>` and `:latest`, as a job next to the Mayfly image, under the same tag-exists check. One version to bump and one idempotent release. The tag does not show what is inside, and every release rebuilds and pushes the image.
+  - **B. Its own tag from its contents** (for example `2.338.2-go1.27.4-node24.22.3`): self-describing, and it only changes with its contents. It needs a second release path and tag-exists check, a tag cannot capture the whole tool list without a revision suffix, and Mayfly still has to be told which tag to use.
+  - **C. Immutable digest only:** exact and tamper-proof, but unreadable and copied into every config by hand or by tooling.
+- **Decision:** A. The base runner version, the Go version and the Node version are recorded as image labels, so `docker inspect` shows what is inside without a second version scheme.
+- **Consequences:**
+  - The release workflow gets a worker image job for linux/amd64 and linux/arm64, with the same push condition as the Mayfly image (push to `main`, tag not yet existing), and Terraform's `mayfly_version` default keeps following `VERSION` as before. The default worker image can be derived from the binary's own version, as `main.version` is, so `DefaultWorkerImage` no longer needs a hand-synced tag; `MAYFLY_WORKER_IMAGE` still overrides it.
+  - Costs: each release rebuilds and pushes about 2.8 GB (layer caching with `type=gha` softens it), and a toolchain bump needs a Mayfly release. The label values are build arguments, so they must stay equal to the pins in the Dockerfile.
+  - Images are only pushed from `main`, so an Azure benchmark of the image alone has to wait for a release or for a manual publish path, such as a `workflow_dispatch` that pushes a pre-release tag. That is not decided here.
+  - Revisit if releases become frequent enough that the image size slows them down, or if toolchain bumps need to ship between Mayfly releases.
