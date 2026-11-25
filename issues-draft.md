@@ -227,9 +227,18 @@ Script that triggers N runs, collects timings through the API (queue time, first
 - [x] Methodology in `docs/benchmarks.md`
 - [x] Re-running gives results within a stated variance
 
-### [bench] Baseline results
+### [bench] Baseline results (#26, closed, superseded by #116)
 Run the harness on GitHub-hosted runners and on unoptimized Mayfly. Record both in the benchmark table.
+The first attempt on the Azure host was stopped after 25 of 48 jobs, too little to publish; the full run moved to #116.
 - [ ] Table committed with date, host size and commit SHA
+
+### **done** [bench] Azure baseline on the 2 vCPU host (#116)
+Two full runs (`azure-a`, `azure-b`) of `hosted,mayfly` on `Standard_B2als_v2`, about 2 hours on the VM. Compare the runs, check the VM's CPU credits, explain the slow `go-build` on Azure, then record the baseline table.
+- [x] Two full runs committed in `bench/results/`
+- [x] `bench compare` result between the two runs recorded
+- [x] CPU credit metric of the VM checked during the runs and the result noted
+- [x] Cause of the slow `go-build` explained, or listed as open
+- [x] Baseline table in `docs/benchmarks.md` and the README with date, host size, Mayfly image version and commit SHA
 
 ## M4 - Optimization: startup
 

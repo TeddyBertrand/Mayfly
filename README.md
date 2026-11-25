@@ -37,4 +37,11 @@ go build ./...
 
 To run Mayfly locally and send it real jobs from GitHub, follow [docs/local-dev.md](docs/local-dev.md). How Mayfly is measured against GitHub-hosted and stock self-hosted runners is in [docs/benchmarks.md](docs/benchmarks.md).
 
+Baseline of 2026-11-25, unoptimized Mayfly 0.2.6 on an Azure `Standard_B2als_v2` (2 vCPU), median total time over 10 runs ([details](docs/benchmarks.md#baseline-of-2026-11-25-azure-unoptimized-mayfly)):
+
+| workflow | GitHub-hosted | Mayfly |
+|---|---|---|
+| go-build | 46.5s | 85s |
+| npm-test | 11s | 31s |
+
 **Status:** M1 core loop works: a `workflow_job` webhook starts a one-job Docker runner that is removed afterwards.
