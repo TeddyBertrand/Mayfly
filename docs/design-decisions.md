@@ -285,3 +285,20 @@ Each entry records one decision, the options considered and the consequences. En
   - A local `make dev` runs the stock image, without the baked toolchains, unless `MAYFLY_WORKER_IMAGE=mayfly-worker:dev` is set after `docker build`; the startup log shows which one is in use.
   - The `classic` runner in `compose.yaml` still uses the stock image, so "same image as Mayfly's workers" in `docs/benchmarks.md` no longer holds; whether `classic` moves to the baked image is decided with the benchmark (#31).
   - A new ghcr.io package is private by default, so the deploy host may need access to pull `mayfly-worker` before the first benchmark.
+
+## 025. Warm pool of fully started runners, per configured repository
+- **Date:** 2026-11-26
+- **Status:** accepted
+- **Context:** #28. The image benchmark (#31) left startup unchanged: queue 6-7 s and first step 9-10 s, against 3 s and 5.5 s hosted. About 4 s of boot (JIT call, container start, runner start and connection to GitHub) runs after the `queued` webhook, on the critical path. JIT configs are repository-scoped (`/repos/{repo}/actions/runners/generate-jitconfig`), and the owner is a user account, which has no account-level runners. GitHub, not Mayfly, assigns a queued job to an idle runner with matching labels. Each JIT runner takes one job and is then removed, which must hold for warm workers too.
+- **Options considered:**
+  - **A. Fully warm runners per repository:** keep N containers per configured repository that are JIT-registered, started and connected, waiting for a job. Takes the whole boot off the critical path. Needs a repository list, and idle runners cost memory and hold a live registration while they wait.
+  - **B. Pre-started containers that register on claim:** start containers with no credential and hand them a JIT config on `queued`. Works for any repository with no credential waiting, but still pays the JIT call and the runner's start and connection, and needs a new handoff mechanism in the worker image.
+  - **C. Banked JIT configs only:** pre-register runners and start the container on `queued`. Smallest change and no idle memory, but saves only the API call, and the unconnected registrations show as offline runners.
+- **Decision:** A. The pooled repositories come from configuration. On `queued`, a repository with an idle warm runner gets no cold worker and its pool is refilled in the background; a repository without one falls back to the cold path, counted as a pool miss.
+- **Consequences:**
+  - One job per worker still holds by construction: a warm runner is an ordinary JIT runner, so it runs one job and is deregistered.
+  - Mayfly cannot claim a runner, only account for GitHub's choice. Refills must count the warm runners actually idle (matched by runner name on `in_progress`, as the tracker already does) rather than trust a counter decremented on `queued`.
+  - Costs: a new setting listing repositories, idle memory per warm runner on a small host, and a registration that lives as long as the runner idles. The idle timeout of #29 is therefore a security limit as well as a cost one, and the reaper must treat an idle warm runner as expected rather than stale.
+  - Warm runners run outside the `MAYFLY_WORKERS` goroutines, since an idle one holding a slot would starve cold jobs. The host can therefore run up to `MAYFLY_WORKERS` cold workers, plus the idle pool, plus warm runners busy with jobs; a cap on the total is settled in #29.
+  - The worker timeout counts from container start, so a warm runner's idle time uses up its `MAYFLY_WORKER_TIMEOUT` until #29 adds an idle timeout.
+  - Revisit if the pooled repositories grow past what the host can keep idle, or if the benchmark shows the runner's connection was not the main cost of boot.
