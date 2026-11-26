@@ -34,7 +34,7 @@ func TestLoadProvisioner(t *testing.T) {
 			want: ProvisionerConfig{
 				App:    GitHubApp{ID: 5714458, Key: []byte("PEM-BYTES"), APIURL: DefaultGitHubAPIURL},
 				Docker: Docker{Socket: DefaultDockerSocket}, WorkerImage: WorkerImageRepo + ":" + testVersion,
-				WorkerTimeout: DefaultWorkerTimeout, Workers: 2, QueueSize: 100,
+				WorkerTimeout: DefaultWorkerTimeout, Workers: 2, QueueSize: 100, PoolSize: 1,
 			},
 		},
 		{
@@ -43,13 +43,19 @@ func TestLoadProvisioner(t *testing.T) {
 				"MAYFLY_GITHUB_API_URL": "http://gh.local", "MAYFLY_DOCKER_SOCKET": "/tmp/d.sock",
 				"MAYFLY_WORKER_IMAGE": "img:1", "MAYFLY_WORKER_NETWORK": "mayfly-workers",
 				"MAYFLY_WORKER_TIMEOUT": "1h", "MAYFLY_WORKERS": "4", "MAYFLY_QUEUE_SIZE": "10",
+				"MAYFLY_POOL_REPOS": "octo/a, octo/b,Octo/A", "MAYFLY_POOL_SIZE": "3",
 			}),
 			want: ProvisionerConfig{
 				App:    GitHubApp{ID: 5714458, Key: []byte("PEM-BYTES"), APIURL: "http://gh.local"},
 				Docker: Docker{Socket: "/tmp/d.sock"}, WorkerImage: "img:1", WorkerNetwork: "mayfly-workers",
 				WorkerTimeout: time.Hour, Workers: 4, QueueSize: 10,
+				PoolRepos: []string{"octo/a", "octo/b"}, PoolSize: 3,
 			},
 		},
+		{name: "pool repo without owner", env: with(map[string]string{"MAYFLY_POOL_REPOS": "octo/a,b"}), wantErr: true},
+		{name: "pool repo empty entry", env: with(map[string]string{"MAYFLY_POOL_REPOS": "octo/a,"}), wantErr: true},
+		{name: "pool repo too deep", env: with(map[string]string{"MAYFLY_POOL_REPOS": "octo/a/b"}), wantErr: true},
+		{name: "zero pool size", env: with(map[string]string{"MAYFLY_POOL_SIZE": "0"}), wantErr: true},
 		{name: "missing app id", env: map[string]string{"MAYFLY_APP_KEY_FILE": "/key.pem"}, wantErr: true},
 		{name: "bad app id", env: with(map[string]string{"MAYFLY_APP_ID": "abc"}), wantErr: true},
 		{name: "missing key", env: map[string]string{"MAYFLY_APP_ID": "1"}, wantErr: true},

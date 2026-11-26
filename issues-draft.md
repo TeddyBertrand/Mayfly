@@ -265,10 +265,10 @@ Image with common toolchains (Go, Node, Python) and frequently used Docker image
 - [x] Image published for amd64 and arm64 with versioned tags
 - [x] Mayfly uses it by default
 
-### [worker] Warm pool of pre-started workers
+### **done** [worker] Warm pool of pre-started workers (#28)
 Keep N idle workers registered and waiting, claim one per job, and refill in the background. Must respect the one-job-per-worker rule and security isolation.
-- [ ] Pool size configurable
-- [ ] A claimed worker is never reused
+- [x] Pool size configurable
+- [x] A claimed worker is never reused
 
 ### [provisioner] Pool sizing and scale-down
 Simple policy for pool size (fixed minimum plus burst) and idle timeout so the host is not wasting resources.

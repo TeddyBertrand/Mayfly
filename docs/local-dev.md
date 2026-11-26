@@ -93,6 +93,8 @@ Expected output (JSON, one line each): `server listening` twice (`"server":"webh
 | `MAYFLY_RUNNER_LABELS` | `mayfly` | Labels a job must request to be accepted (decision 007) |
 | `MAYFLY_WORKERS` | `2` | Jobs provisioned in parallel |
 | `MAYFLY_QUEUE_SIZE` | `100` | Jobs waiting before the receiver answers 503 |
+| `MAYFLY_POOL_REPOS` | empty (no pool) | Comma-separated `owner/name` repositories that keep warm runners (decision 025). The App must be installed on each |
+| `MAYFLY_POOL_SIZE` | `1` | Idle warm runners kept per pooled repository. They run outside `MAYFLY_WORKERS`, so each one adds a container |
 | `MAYFLY_WORKER_IMAGE` | `ghcr.io/teddybertrand/mayfly-worker:<version>` for a release, `ghcr.io/actions/actions-runner:2.338.2` for a development build (decision 024) | Worker image. To run the baked toolchains locally, build `images/worker` as `mayfly-worker:dev` and set this to it |
 | `MAYFLY_WORKER_NETWORK` | Docker default `bridge` | Docker network workers attach to; mayfly creates it (bridge interface of the same name) when missing |
 | `MAYFLY_WORKER_TIMEOUT` | `6h` | Maximum worker lifetime |

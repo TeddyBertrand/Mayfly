@@ -51,6 +51,17 @@ The reaper stays a separate binary (`cmd/reaper`): the thing that cleans up must
 
 A JIT runner is not bound to the job that triggered it. GitHub gives it any queued job whose labels it matches, so with two jobs queued at once, worker A may run job B. The count stays one worker per job; the job ID in the runner name is the job that triggered the worker.
 
+### Warm pool
+
+For the repositories in `MAYFLY_POOL_REPOS`, the provisioner keeps `MAYFLY_POOL_SIZE` runners registered, started and idle before any job exists ([decision 025](design-decisions.md)). They are ordinary JIT runners named `mayfly-warm-<random>`, so each still takes one job and is removed.
+
+```
+queued ─► free warm runner for the repo? ─ yes ─► reserve it, refill in the background (GitHub hands the job to an idle runner)
+                                          └ no ──► cold path above (pool miss)
+```
+
+GitHub, not Mayfly, picks which idle runner gets a job, so the pool only counts: a queued job reserves one free runner, and `in_progress` on a warm runner, a cancellation or a 5-minute timeout ends the reservation. A warm runner taking a job that also has a cold worker waiting drops that worker. Warm runners have their own goroutines, outside `MAYFLY_WORKERS`.
+
 ## In one paragraph
 
 GitHub tells the receiver a job is waiting. The receiver checks it is authentic and not a duplicate, then asks the provisioner for a worker. The provisioner gets a one-job credential from GitHub and starts a throwaway container with it. If a container is left behind, the reaper kills it. Each worker lives for exactly one job, hence the name Mayfly.

@@ -121,3 +121,15 @@ func TestRunnerName(t *testing.T) {
 		t.Errorf("only %d unique names out of 100", len(seen))
 	}
 }
+
+// TestWarmRunnerName checks warm names keep the mayfly prefix the reaper relies on, with no job ID.
+func TestWarmRunnerName(t *testing.T) {
+	pattern := regexp.MustCompile(`^mayfly-warm-[0-9a-f]{6}$`)
+	name, err := WarmRunnerName()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pattern.MatchString(name) || !strings.HasPrefix(name, RunnerNamePrefix) {
+		t.Errorf("name %q does not match %s", name, pattern)
+	}
+}

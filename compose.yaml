@@ -38,6 +38,8 @@ services:
       MAYFLY_WEBHOOK_SECRET_FILE: /run/secrets/webhook_secret
       MAYFLY_WORKERS: ${MAYFLY_WORKERS:-2}
       MAYFLY_QUEUE_SIZE: ${MAYFLY_QUEUE_SIZE:-100}
+      MAYFLY_POOL_REPOS: ${MAYFLY_POOL_REPOS:-}
+      MAYFLY_POOL_SIZE: ${MAYFLY_POOL_SIZE:-1}
     ports:
       - "${MAYFLY_PUBLISH:-127.0.0.1:8080}:8080"
     healthcheck:
