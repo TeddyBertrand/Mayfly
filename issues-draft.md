@@ -301,6 +301,16 @@ Publish v0.3.6 (decision 010) so `main` ships the pre-baked worker image (#27, d
 - [x] The deploy host can pull `mayfly-worker` (package visibility checked)
 - [x] Terraform default `mayfly_version` is `0.3.6`
 
+### [ci] Release v0.3.9 (#143)
+Publish v0.3.9 (decision 010) so `main` ships the warm pool (#28, #29, decisions 025 and 026), its metrics and dashboard row (#30, decision 027), the fix for late warm runner events (#140) and the Azure settings for the pool and worker image, which the rest of the benchmark (#31) needs. A patch version, because it lands before the end of M4: 0.4.0 stays for that, once the pool is benchmarked. Moves the Terraform default `mayfly_version` to `0.3.9` to keep it aligned.
+- [ ] `VERSION` is `0.3.9` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.3.9` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.3.9` published for amd64 and arm64
+- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.3.9` published for amd64 and arm64
+- [ ] `mayfly --version` in the image prints `0.3.9`
+- [ ] The deploy host can pull `mayfly-worker` (package visibility checked)
+- [ ] Terraform default `mayfly_version` is `0.3.9`
+
 ## M5 - Optimization: caching and disk
 
 ### [infra] Local cache server for `actions/cache`
