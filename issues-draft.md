@@ -286,10 +286,10 @@ A local run of the warm pool against GitHub showed a 5s job whose `completed` an
 - [x] Deliberately stopping a worker logs no `ERROR`
 - [x] The docs say claim time includes notification delay, which can be most of it
 
-### [bench] Benchmark: image and warm pool
+### **done** [bench] Benchmark: image and warm pool (#31)
 Run the harness for each step on its own and combined, and add rows to the table.
 - [x] Image alone measured against the baseline (boot-to-first-step and total time), with the image size recorded
-- [ ] First step starts in under 10s (or the gap is explained)
+- [x] First step starts in under 10s (or the gap is explained)
 
 ### **done** [ci] Release v0.3.6 (#132)
 Publish v0.3.6 (decision 010) so `main` ships the pre-baked worker image (#27, decisions 022 to 024) and the Azure benchmark of the image alone (#31) can pull it. A patch version, because it lands between milestones: 0.4.0 stays for the end of M4, once the warm pool exists. The release publishes `mayfly-worker:0.3.6` next to the `mayfly` image, and a 0.3.6 binary defaults to it. Moves the Terraform default `mayfly_version` to `0.3.6` to keep it aligned.
@@ -301,15 +301,25 @@ Publish v0.3.6 (decision 010) so `main` ships the pre-baked worker image (#27, d
 - [x] The deploy host can pull `mayfly-worker` (package visibility checked)
 - [x] Terraform default `mayfly_version` is `0.3.6`
 
-### [ci] Release v0.3.9 (#143)
+### **done** [ci] Release v0.3.9 (#143)
 Publish v0.3.9 (decision 010) so `main` ships the warm pool (#28, #29, decisions 025 and 026), its metrics and dashboard row (#30, decision 027), the fix for late warm runner events (#140) and the Azure settings for the pool and worker image, which the rest of the benchmark (#31) needs. A patch version, because it lands before the end of M4: 0.4.0 stays for that, once the pool is benchmarked. Moves the Terraform default `mayfly_version` to `0.3.9` to keep it aligned.
-- [ ] `VERSION` is `0.3.9` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.3.9` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.3.9` published for amd64 and arm64
-- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.3.9` published for amd64 and arm64
-- [ ] `mayfly --version` in the image prints `0.3.9`
+- [x] `VERSION` is `0.3.9` on `dev` and merged into `main`
+- [x] GitHub Release `v0.3.9` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.3.9` published for amd64 and arm64
+- [x] `ghcr.io/teddybertrand/mayfly-worker:0.3.9` published for amd64 and arm64
+- [x] `mayfly --version` in the image prints `0.3.9`
+- [x] The deploy host can pull `mayfly-worker` (package visibility checked)
+- [x] Terraform default `mayfly_version` is `0.3.9`
+
+### [ci] Release v0.4.0 (#148)
+Publish v0.4.0 (decision 010) so `main` ships the end of M4: the pre-baked worker image and the warm pool, benchmarked alone and combined on Azure (#31). With both, the first step starts after 5s at the median against 9.5-10s in the baseline, and the two demo workflows are on par with GitHub-hosted runners. One minor version per milestone, so M4 gets 0.4.0. No code change since 0.3.9, only the benchmark results and docs, so this is a milestone marker. Moves the Terraform default `mayfly_version` to `0.4.0` to keep it aligned.
+- [ ] `VERSION` is `0.4.0` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.4.0` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.4.0` published for amd64 and arm64
+- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.4.0` published for amd64 and arm64
+- [ ] `mayfly --version` in the image prints `0.4.0`
 - [ ] The deploy host can pull `mayfly-worker` (package visibility checked)
-- [ ] Terraform default `mayfly_version` is `0.3.9`
+- [ ] Terraform default `mayfly_version` is `0.4.0`
 
 ## M5 - Optimization: caching and disk
 

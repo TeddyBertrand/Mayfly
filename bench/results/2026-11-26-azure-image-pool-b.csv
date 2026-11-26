@@ -1,0 +1,49 @@
+dispatched_at,workflow,runner,iteration,warmup,run_id,job_id,runner_name,conclusion,queue_s,first_step_s,total_s
+2026-11-26T13:59:42Z,go-build,hosted,0,true,45834537454,139959817986,GitHub Actions 1000002809,success,2,4,57
+2026-11-26T14:00:48Z,go-build,mayfly,0,true,45834728739,139960468489,mayfly-warm-db4a3c,success,2,5,44
+2026-11-26T14:01:44Z,npm-test,hosted,0,true,45834889899,139961022095,GitHub Actions 1000002810,success,4,6,14
+2026-11-26T14:02:07Z,npm-test,mayfly,0,true,45834952789,139961244349,mayfly-warm-8e9d35,success,2,5,13
+2026-11-26T14:02:30Z,go-build,hosted,1,true,45835016701,139961464891,GitHub Actions 1000002811,success,3,6,46
+2026-11-26T14:03:31Z,go-build,mayfly,1,true,45835183916,139962056373,mayfly-warm-bf35a4,success,1,4,44
+2026-11-26T14:04:27Z,npm-test,hosted,1,true,45835334223,139962597891,GitHub Actions 1000002812,success,2,4,11
+2026-11-26T14:04:50Z,npm-test,mayfly,1,true,45835396386,139962817074,mayfly-warm-e6b053,success,2,6,14
+2026-11-26T14:05:14Z,go-build,hosted,2,false,45835462744,139963038722,GitHub Actions 1000002813,success,2,4,36
+2026-11-26T14:06:04Z,go-build,mayfly,2,false,45835606659,139963529250,mayfly-warm-a51d0c,success,2,5,45
+2026-11-26T14:07:00Z,npm-test,hosted,2,false,45835756639,139964066876,GitHub Actions 1000002814,success,3,4,10
+2026-11-26T14:07:24Z,npm-test,mayfly,2,false,45835823246,139964291236,mayfly-warm-3d8c79,success,2,5,13
+2026-11-26T14:07:47Z,go-build,hosted,3,false,45835887002,139964518677,GitHub Actions 1000002815,success,3,6,41
+2026-11-26T14:08:43Z,go-build,mayfly,3,false,45836039608,139965050892,mayfly-warm-f7bf7c,success,2,5,44
+2026-11-26T14:09:39Z,npm-test,hosted,3,false,45836186691,139965578982,GitHub Actions 1000002816,success,3,7,26
+2026-11-26T14:10:19Z,npm-test,mayfly,3,false,45836299595,139965958346,mayfly-warm-643b46,success,2,5,13
+2026-11-26T14:10:47Z,go-build,hosted,4,false,45836383056,139966245187,GitHub Actions 1000002817,success,3,5,54
+2026-11-26T14:11:53Z,go-build,mayfly,4,false,45836562761,139966896690,mayfly-warm-77c83f,success,1,5,44
+2026-11-26T14:12:54Z,npm-test,hosted,4,false,45836735568,139967485175,GitHub Actions 1000002818,success,3,6,24
+2026-11-26T14:13:28Z,npm-test,mayfly,4,false,45836825423,139967810928,mayfly-warm-008e02,success,2,5,12
+2026-11-26T14:13:51Z,go-build,hosted,5,false,45836888201,139968031718,GitHub Actions 1000002819,success,2,4,56
+2026-11-26T14:14:57Z,go-build,mayfly,5,false,45837077109,139968684904,mayfly-warm-907891,success,2,5,45
+2026-11-26T14:15:53Z,npm-test,hosted,5,false,45837239206,139969237362,GitHub Actions 1000002820,success,3,7,26
+2026-11-26T14:16:32Z,npm-test,mayfly,5,false,45837351883,139969634464,mayfly-warm-0dc32b,success,1,5,12
+2026-11-26T14:16:55Z,go-build,hosted,6,false,45837415485,139969853631,GitHub Actions 1000002821,success,3,5,54
+2026-11-26T14:18:01Z,go-build,mayfly,6,false,45837599061,139970497171,mayfly-warm-033473,success,2,5,44
+2026-11-26T14:18:57Z,npm-test,hosted,6,false,45837755368,139971042907,GitHub Actions 1000002822,success,3,5,13
+2026-11-26T14:19:20Z,npm-test,mayfly,6,false,45837818604,139971267256,mayfly-warm-955507,success,2,5,13
+2026-11-26T14:19:43Z,go-build,hosted,7,false,45837880980,139971485960,GitHub Actions 1000002823,success,3,5,53
+2026-11-26T14:20:49Z,go-build,mayfly,7,false,45838077776,139972147222,mayfly-warm-795de9,success,1,4,44
+2026-11-26T14:21:44Z,npm-test,hosted,7,false,45838229075,139972680503,GitHub Actions 1000002824,success,3,4,12
+2026-11-26T14:22:07Z,npm-test,mayfly,7,false,45838295221,139972907866,mayfly-warm-0259ee,success,2,7,16
+2026-11-26T14:22:35Z,go-build,hosted,8,false,45838376188,139973182762,GitHub Actions 1000002825,success,3,4,49
+2026-11-26T14:23:36Z,go-build,mayfly,8,false,45838544589,139973774661,mayfly-warm-38b94e,success,2,8,48
+2026-11-26T14:24:36Z,npm-test,hosted,8,false,45838719191,139974375693,GitHub Actions 1000002826,success,3,5,15
+2026-11-26T14:25:04Z,npm-test,mayfly,8,false,45838799337,139974662535,mayfly-warm-feb7a0,success,2,5,13
+2026-11-26T14:25:27Z,go-build,hosted,9,false,45838863652,139974882100,GitHub Actions 1000002827,success,2,4,52
+2026-11-26T14:26:33Z,go-build,mayfly,9,false,45839051200,139975532659,mayfly-warm-2e3931,success,1,6,46
+2026-11-26T14:27:28Z,npm-test,hosted,9,false,45839202017,139976070854,GitHub Actions 1000002828,success,2,5,19
+2026-11-26T14:28:02Z,npm-test,mayfly,9,false,45839295158,139976401211,mayfly-warm-9f873b,success,2,7,15
+2026-11-26T14:28:30Z,go-build,hosted,10,false,45839373820,139976676596,GitHub Actions 1000002829,success,3,6,52
+2026-11-26T14:29:31Z,go-build,mayfly,10,false,45839538105,139977264753,mayfly-warm-058908,success,2,6,45
+2026-11-26T14:30:26Z,npm-test,hosted,10,false,45839694637,139977801695,GitHub Actions 1000002830,success,3,5,13
+2026-11-26T14:30:49Z,npm-test,mayfly,10,false,45839764875,139978035683,mayfly-warm-8a0550,success,2,6,14
+2026-11-26T14:31:12Z,go-build,hosted,11,false,45839831434,139978265634,GitHub Actions 1000002831,success,2,5,67
+2026-11-26T14:32:29Z,go-build,mayfly,11,false,45840044075,139978995836,mayfly-warm-f929ae,success,2,7,47
+2026-11-26T14:33:29Z,npm-test,hosted,11,false,45840214288,139979587197,GitHub Actions 1000002832,success,3,5,12
+2026-11-26T14:33:57Z,npm-test,mayfly,11,false,45840292635,139979857624,mayfly-warm-c83c5b,success,2,7,15
