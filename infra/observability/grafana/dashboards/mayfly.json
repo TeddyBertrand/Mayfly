@@ -157,7 +157,7 @@
       "id": 8,
       "type": "timeseries",
       "title": "Boot time",
-      "description": "From mayfly accepting the queued event to its runner picking up a job, on mayfly's clock: the part of queue time Mayfly controls (its queue, runner registration, container start, runner connect). M4 sets out to shrink it. Smoothed over 5 minutes.",
+      "description": "Cold starts only: from mayfly accepting the queued event to the runner it started picking up a job, on mayfly's clock (its queue, runner registration, container start, runner connect). Jobs served warm are in Claim latency. Smoothed over 5 minutes.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
@@ -172,11 +172,112 @@
       }
     },
     {
+      "id": 104,
+      "type": "row",
+      "title": "Warm pool",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Pool runners",
+      "description": "Warm runners of all pooled repositories by state, with the sum of their caps (MAYFLY_POOL_MAX per repository). Pending is a slot being registered, or held while it backs off after a failure.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (state) (mayfly_pool_runners)", "legendFormat": "{{state}}" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(mayfly_pool_max_runners)", "legendFormat": "cap" }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "fieldConfig": {
+        "defaults": { "decimals": 0, "min": 0, "noValue": "no pool", "custom": { "lineWidth": 1, "fillOpacity": 60, "lineInterpolation": "stepAfter", "stacking": { "mode": "normal", "group": "A" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "idle" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } } ] },
+          { "matcher": { "id": "byName", "options": "busy" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } } ] },
+          { "matcher": { "id": "byName", "options": "pending" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } } ] },
+          { "matcher": { "id": "byName", "options": "retiring" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } } ] },
+          {
+            "matcher": { "id": "byName", "options": "cap" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } },
+              { "id": "custom.stacking", "value": { "mode": "none", "group": "A" } },
+              { "id": "custom.fillOpacity", "value": 0 },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [ 8, 8 ] } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Pool hit rate",
+      "description": "Queued jobs of pooled repositories that reserved a warm runner, in the selected time range. A hit is a reservation: GitHub still chooses which runner gets the job.",
+      "gridPos": { "h": 8, "w": 4, "x": 8, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(mayfly_pool_requests_total{result=\"hit\"}[$__range])) / sum(increase(mayfly_pool_requests_total[$__range]))",
+          "instant": true
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "value" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "noValue": "no pool",
+          "mappings": [ { "type": "special", "options": { "match": "nan", "result": { "text": "no jobs" } } } ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Pool misses",
+      "description": "Queued jobs per minute that found no free warm runner and started cold. miss_empty: below the cap, none free yet. miss_max: at the cap. miss_unresolved: no installation known for the repository. Repeated misses are the signal to revisit pool sizing (decision 026).",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 15 },
+      "interval": "1m",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "round(sum by (result) (increase(mayfly_pool_requests_total{result!=\"hit\"}[$__interval]))) > 0", "legendFormat": "{{result}}" }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "fieldConfig": {
+        "defaults": { "decimals": 0, "min": 0, "noValue": "no misses", "custom": { "drawStyle": "bars", "fillOpacity": 80, "lineWidth": 1, "stacking": { "mode": "normal", "group": "A" } } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Claim latency",
+      "description": "From a queued job reserving a warm runner to a warm runner picking it up, on mayfly's clock, including the in_progress webhook's delivery delay. Compare with Boot time, the cold path. Smoothed over 5 minutes.",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.5, sum by (le) (rate(mayfly_pool_claim_seconds_bucket[5m])))", "legendFormat": "p50" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, sum by (le) (rate(mayfly_pool_claim_seconds_bucket[5m])))", "legendFormat": "p95" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(mayfly_pool_claim_seconds_sum[5m])) / sum(rate(mayfly_pool_claim_seconds_count[5m]))", "legendFormat": "mean" }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "always", "pointSize": 4, "spanNulls": false } },
+        "overrides": []
+      }
+    },
+    {
       "id": 102,
       "type": "row",
       "title": "Running",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
       "panels": []
     },
     {
@@ -184,7 +285,7 @@
       "type": "timeseries",
       "title": "Job duration",
       "description": "How long jobs ran, from GitHub's started_at to completed_at, for jobs a runner took. M5 (caches, mirrors, tmpfs) sets out to shrink it. Smoothed over 5 minutes.",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 15 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.5, sum by (le) (rate(mayfly_job_duration_seconds_bucket[5m])))", "legendFormat": "p50" },
@@ -202,7 +303,7 @@
       "type": "timeseries",
       "title": "Jobs by conclusion",
       "description": "Completed jobs per minute, by GitHub conclusion.",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 15 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
       "interval": "1m",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
@@ -224,7 +325,7 @@
       "type": "timeseries",
       "title": "Workers and queue",
       "description": "Workers alive and jobs waiting for a slot over time. Waiting above 0 while workers sit at the cap means MAYFLY_WORKERS is the bottleneck.",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 15 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(mayfly_workers_alive)", "legendFormat": "workers alive" },
@@ -241,7 +342,7 @@
       "type": "row",
       "title": "Health",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
       "panels": []
     },
     {
@@ -249,7 +350,7 @@
       "type": "timeseries",
       "title": "Retries",
       "description": "Retried attempts per minute after a temporary failure, by operation: jit_config (GitHub) or worker_start (Docker).",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 33 },
       "interval": "1m",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
@@ -266,7 +367,7 @@
       "type": "bargauge",
       "title": "Reaper actions",
       "description": "What the reaper did in the selected time range: orphaned workers removed by reason, jobs found stuck in queued by reason, stale runner registrations deleted, and sweeps that failed.",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 33 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "round(sum by (reason) (increase(mayfly_reaper_workers_removed_total[$__range])))", "legendFormat": "removed: {{reason}}", "instant": true },
@@ -285,7 +386,7 @@
       "type": "stat",
       "title": "Since last reaper sweep",
       "description": "Time since the reaper last listed workers. It sweeps every MAYFLY_REAPER_INTERVAL (1m by default); well above that, the reaper is stuck or down.",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 33 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "time() - max(mayfly_reaper_last_sweep_timestamp_seconds)", "instant": true }
