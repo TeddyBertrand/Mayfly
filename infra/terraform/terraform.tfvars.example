@@ -6,3 +6,11 @@ app_id           = "123456"
 
 # Benchmark days: a 4 GB size, then back to the free default.
 # vm_size = "Standard_B2als_v2"
+
+# Warm pool (off by default). Each warm runner is a container that stays up on the host.
+# pool_repos = "owner/name"
+# pool_size  = 1
+# pool_max   = 2
+
+# Override the worker image, e.g. the stock runner. Empty uses the one matching mayfly_version.
+# worker_image = "ghcr.io/actions/actions-runner:2.338.2"
