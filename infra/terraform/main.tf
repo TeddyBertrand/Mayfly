@@ -114,10 +114,15 @@ resource "azurerm_linux_virtual_machine" "host" {
     key_vault_uri = data.azurerm_key_vault.secrets.vault_uri
     domain        = azurerm_public_ip.host.fqdn
     env = {
-      MAYFLY_VERSION       = var.mayfly_version
-      MAYFLY_APP_ID        = var.app_id
-      MAYFLY_RUNNER_LABELS = var.runner_labels
-      MAYFLY_WORKERS       = var.workers
+      MAYFLY_VERSION           = var.mayfly_version
+      MAYFLY_APP_ID            = var.app_id
+      MAYFLY_RUNNER_LABELS     = var.runner_labels
+      MAYFLY_WORKERS           = var.workers
+      MAYFLY_WORKER_IMAGE      = var.worker_image
+      MAYFLY_POOL_REPOS        = var.pool_repos
+      MAYFLY_POOL_SIZE         = var.pool_size
+      MAYFLY_POOL_MAX          = var.pool_max == null ? "" : tostring(var.pool_max)
+      MAYFLY_POOL_IDLE_TIMEOUT = var.pool_idle_timeout
     }
   }))
   tags = var.tags
