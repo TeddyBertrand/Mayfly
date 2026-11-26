@@ -258,7 +258,7 @@
       "id": 18,
       "type": "timeseries",
       "title": "Claim latency",
-      "description": "From a queued job reserving a warm runner to a warm runner picking it up, on mayfly's clock, including the in_progress webhook's delivery delay. Compare with Boot time, the cold path. Smoothed over 5 minutes.",
+      "description": "From a queued job reserving a warm runner to a warm runner picking it up, on mayfly's clock. It includes the in_progress webhook's delivery delay, which can be most of it, so for how long a job waited read Queue time. Boot time is the cold path's counterpart. Smoothed over 5 minutes.",
       "gridPos": { "h": 8, "w": 6, "x": 18, "y": 15 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [

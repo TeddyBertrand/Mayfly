@@ -278,6 +278,14 @@ Simple policy for pool size (fixed minimum plus burst) and idle timeout so the h
 Add pool size, claim latency and pool-miss metrics to the dashboard.
 - [x] Panels added
 
+### **done** [provisioner] Handle late events for exited warm runners (#140)
+A local run of the warm pool against GitHub showed a 5s job whose `completed` and then `in_progress` webhooks arrived after its runner's container had exited: the pool warned that the runner took no job and recorded no claim time. Idle retirement also logged an `ERROR` for the stop it asked for.
+- [x] A warm runner whose events arrive after it exits is still recognised, in either order
+- [x] A claim time is recorded once if the job had a reservation and its `in_progress` event arrives within the waiting period
+- [x] "Exited without a job" is logged only if no event arrives within that period
+- [x] Deliberately stopping a worker logs no `ERROR`
+- [x] The docs say claim time includes notification delay, which can be most of it
+
 ### [bench] Benchmark: image and warm pool
 Run the harness for each step on its own and combined, and add rows to the table.
 - [x] Image alone measured against the baseline (boot-to-first-step and total time), with the image size recorded

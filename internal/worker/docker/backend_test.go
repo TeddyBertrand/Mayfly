@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -241,6 +242,31 @@ func TestRunSequences(t *testing.T) {
 				t.Errorf("logs leak the JIT config:\n%s", out)
 			}
 		})
+	}
+}
+
+// TestRunCancelledLogsNoError checks stopping a running worker removes its container without logging an error.
+func TestRunCancelledLogsNoError(t *testing.T) {
+	f := newFakeEngine()
+	f.waitForever = true
+	b, logs := newFakeBackend(t, f, 5*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-f.started
+		// Lets start's response reach the backend, so the cancel lands on the wait.
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	if err := b.Run(ctx, testSpec); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+	if got := f.callList(); got[len(got)-1] != "remove" {
+		t.Errorf("calls = %v, want a final remove", got)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "worker stopped before it exited") || strings.Contains(out, `"level":"ERROR"`) {
+		t.Errorf("want an info stop and no error:\n%s", out)
 	}
 }
 

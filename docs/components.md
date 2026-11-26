@@ -60,7 +60,17 @@ queued ─► free warm runner for the repo? ─ yes ─► reserve it, refill i
                                           └ no ──► cold path above (pool miss)
 ```
 
-GitHub, not Mayfly, picks which idle runner gets a job, so the pool only counts: a queued job reserves one free runner, and `in_progress` on a warm runner, a cancellation or a 5-minute timeout ends the reservation. A warm runner taking a job that also has a cold worker waiting drops that worker. Warm runners have their own goroutines, outside `MAYFLY_WORKERS`.
+GitHub, not Mayfly, picks which idle runner gets a job, so the pool only counts: a queued job reserves one free runner, and an `in_progress` or `completed` event for the job, or a 5-minute timeout, ends the reservation. A warm runner taking a job that also has a cold worker waiting drops that worker. Warm runners have their own goroutines, outside `MAYFLY_WORKERS`.
+
+Webhooks can be late and out of order, and a short job can end before any of them arrives. So the pool remembers an exited warm runner for 5 minutes:
+
+```
+container exits ─► slot freed and refilled at once ─► name kept for 5 min
+   event naming it arrives ──► it took a job (claim time recorded on in_progress)
+   no event in the window ───► warning "warm runner exited without a job"
+```
+
+If `completed` arrives before `in_progress`, the reservation stops counting at once and only its start time is kept, so the later `in_progress` can still record the claim time. This memory is lost on restart.
 
 The pool is bounded ([decision 026](design-decisions.md)): it refills only while fewer than `MAYFLY_POOL_MAX` warm runners are alive for the repository, idle or busy, so the host runs at most `MAYFLY_WORKERS` cold workers plus `MAYFLY_POOL_MAX` warm runners per pooled repository. A runner idle for `MAYFLY_POOL_IDLE_TIMEOUT` is retired and replaced:
 

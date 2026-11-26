@@ -46,7 +46,7 @@ mayfly:     queued event accepted ─────── in_progress event
 ```
 
 - **Queue time** is what a developer feels: how long the job waited for a runner. It uses GitHub's timestamps, the same ones the benchmark harness reads through the API.
-- **Claim time** is the warm path's counterpart of boot time: from a job reserving a warm runner to the `in_progress` event of a warm runner. Nothing boots, so it holds GitHub's assignment and the webhook delivery (decision 027).
+- **Claim time** is the warm path's counterpart of boot time: from a job reserving a warm runner to the `in_progress` event of a warm runner. Nothing boots, so it holds GitHub's assignment and the webhook delivery (decision 027). **Delivery can be most of it**, so it is not how long the job waited: in a local run on 2026-11-26, `in_progress` reached mayfly several seconds after the job's `started_at`, with claim times of about 4 to 10 s while GitHub's queue time for the first of those jobs was 2 s (two different clocks, so only indicative). For how long a job waited, read queue time.
 - **Boot time**, for cold starts only, is the part of the queue time Mayfly controls: its own queue, the JIT registration, the container start and the runner connecting. It uses mayfly's clock, and ends when the `in_progress` webhook arrives, so it also holds that delivery delay and can come out slightly above queue time. In the first test run (10 jobs, 2 workers) mean boot time was 11.5 s against 11.4 s of queue time: nearly all of the wait was Mayfly's, not GitHub's. M4 (pre-baked image, warm pool) sets out to shrink boot time.
 - **Job duration** is the job itself, from GitHub's timestamps. M5 (caches, mirrors, tmpfs) sets out to shrink it.
 
@@ -76,7 +76,7 @@ These exist for the repositories in the pool's configuration. Without a pool, th
 | `mayfly_pool_runners` | gauge | runners | `repo`, `state` | Warm runners by state: `pending` (being registered, or a slot held while it backs off after a failure), `idle`, `busy`, `retiring`. Read from the pool at each scrape. |
 | `mayfly_pool_max_runners` | gauge | runners | `repo` | Cap on the warm runners alive (`MAYFLY_POOL_MAX`). |
 | `mayfly_pool_requests_total` | counter | jobs | `repo`, `result` | Queued jobs of pooled repositories: `hit` (reserved a warm runner), `miss_empty` (none free, below the cap), `miss_max` (none free, at the cap), `miss_unresolved` (installation not known, yet or at all). A redelivered event for a job already reserved or tracked is not counted again. |
-| `mayfly_pool_claim_seconds` | histogram | seconds | | Time from a job reserving a warm runner to the `in_progress` event of a warm runner. Buckets from 0.25 to 60 s. |
+| `mayfly_pool_claim_seconds` | histogram | seconds | | Time from a job reserving a warm runner to the `in_progress` event of a warm runner, including its delivery delay. Recorded even when the runner has already exited, if the event arrives within 5 minutes. Buckets from 0.25 to 60 s. |
 
 A hit is a reservation: GitHub chooses which runner gets the job, so another runner can still take it. A job that missed and was then taken by a warm runner has no claim time.
 

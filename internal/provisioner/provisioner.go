@@ -120,9 +120,9 @@ func (p *Provisioner) Enqueue(job workflow.Job) error {
 func (p *Provisioner) Update(action workflow.Action, job workflow.Job) {
 	log := p.logger.With(logkey.Action, action, logkey.JobID, job.ID, logkey.Repo, job.Repo, logkey.RunnerName, job.RunnerName)
 	p.observe(action, job)
-	if warm, reservedAt := p.pool.update(action, job); warm {
-		if !reservedAt.IsZero() {
-			p.metrics.PoolClaimSeconds.Observe(p.now().Sub(reservedAt).Seconds())
+	if warm, claimedAt := p.pool.update(action, job); warm {
+		if !claimedAt.IsZero() {
+			p.metrics.PoolClaimSeconds.Observe(p.now().Sub(claimedAt).Seconds())
 		}
 		// A cold worker started for this job before the pool could serve it would otherwise idle until its timeout.
 		if c, err := p.jobs.drop(job.ID); err == nil {

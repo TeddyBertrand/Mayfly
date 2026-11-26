@@ -88,6 +88,20 @@ type warmRunner struct {
 	stop context.CancelFunc
 }
 
+// exitedRunner is a warm runner whose container is gone but whose job events may still arrive.
+type exitedRunner struct {
+	repo   *warmRepo
+	exited time.Time
+	// claimed reports whether an event showed it took a job.
+	claimed bool
+}
+
+// awaitedClaim is a reservation whose job's completed event overtook its in_progress event.
+// It no longer counts against free runners, and only keeps the start of the claim time.
+type awaitedClaim struct {
+	reserved, completed time.Time
+}
+
 // pool keeps idle, registered runners per repository and refills them as jobs take them, within a cap.
 // GitHub picks which runner gets a job, so the pool only accounts for that choice through reservations.
 type pool struct {
@@ -108,6 +122,10 @@ type pool struct {
 	repos map[string]*warmRepo
 	// warm maps the name of every registered warm runner to its state.
 	warm map[string]*warmRunner
+	// exited maps the name of recently exited warm runners, kept for reserveTimeout since GitHub's events can be late.
+	exited map[string]*exitedRunner
+	// awaiting maps job IDs to claims still waiting for their in_progress event.
+	awaiting map[int64]awaitedClaim
 }
 
 // newPool returns the warm pool for p as configured by opts, or nil when no repository is pooled.
@@ -121,6 +139,7 @@ func newPool(p *Provisioner, opts PoolOptions) *pool {
 		reserveTimeout: reserveTimeout, sweepInterval: sweepInterval, retryDelay: warmRetryDelay,
 		newName: github.WarmRunnerName,
 		repos:   map[string]*warmRepo{}, warm: map[string]*warmRunner{},
+		exited: map[string]*exitedRunner{}, awaiting: map[int64]awaitedClaim{},
 	}
 	for _, name := range opts.Repos {
 		w.repos[repoKey(name)] = &warmRepo{
@@ -186,36 +205,59 @@ func (w *pool) reserve(job workflow.Job) (reserved, pooled bool) {
 	return true, true
 }
 
-// update applies an in_progress or completed event to the pool. warm reports an in_progress event on a
-// warm runner; reservedAt is when the job reserved a warm runner, zero when it did not.
-func (w *pool) update(action workflow.Action, job workflow.Job) (warm bool, reservedAt time.Time) {
+// update applies an in_progress or completed event to the pool. warm reports an event naming a warm
+// runner, live or recently exited. claimedAt is set on a warm in_progress event whose job had reserved
+// a warm runner, to when it did.
+func (w *pool) update(action workflow.Action, job workflow.Job) (warm bool, claimedAt time.Time) {
 	if w == nil {
 		return false, time.Time{}
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if rn := w.warm[job.RunnerName]; rn != nil && action == workflow.ActionInProgress {
+	if rn := w.warm[job.RunnerName]; rn != nil {
 		warm = true
-		r := rn.repo
-		// A runner being retired can still win a job; then its registration delete fails and it keeps running.
-		if r.idle[job.RunnerName] || r.retiring[job.RunnerName] {
-			delete(r.idle, job.RunnerName)
-			delete(r.retiring, job.RunnerName)
-			r.busy[job.RunnerName] = true
-			if _, ok := r.reserved[job.ID]; !ok {
-				// A job the pool did not expect took the runner, so nothing refilled for it yet.
-				w.signal()
-			}
-		}
+		w.markBusy(rn.repo, job)
+	} else if ex := w.exited[job.RunnerName]; ex != nil {
+		warm = true
+		ex.claimed = true
 	}
-	// The job either took a runner or ended without one: its reservation has served its purpose.
+
+	// The job either took a runner or ended without one: its reservation stops counting.
+	var reservedAt time.Time
 	if r := w.repos[repoKey(job.Repo)]; r != nil {
-		if at, ok := r.reserved[job.ID]; ok {
-			reservedAt = at
-			delete(r.reserved, job.ID)
-		}
+		reservedAt = r.reserved[job.ID]
+		delete(r.reserved, job.ID)
 	}
-	return warm, reservedAt
+
+	if action != workflow.ActionInProgress {
+		if warm && !reservedAt.IsZero() {
+			w.awaiting[job.ID] = awaitedClaim{reserved: reservedAt, completed: w.p.now()}
+		}
+		return warm, time.Time{}
+	}
+	if c, ok := w.awaiting[job.ID]; ok {
+		reservedAt = c.reserved
+		delete(w.awaiting, job.ID)
+	}
+	if !warm {
+		return false, time.Time{}
+	}
+	return true, reservedAt
+}
+
+// markBusy records that the live warm runner named by job took it. Callers hold mu.
+func (w *pool) markBusy(r *warmRepo, job workflow.Job) {
+	// A runner being retired can still win a job; then its registration delete fails and it keeps running.
+	if !r.idle[job.RunnerName] && !r.retiring[job.RunnerName] {
+		return
+	}
+	delete(r.idle, job.RunnerName)
+	delete(r.retiring, job.RunnerName)
+	r.busy[job.RunnerName] = true
+	if _, ok := r.reserved[job.ID]; !ok {
+		// A job the pool did not expect took the runner, so nothing refilled for it yet.
+		w.signal()
+	}
 }
 
 // signal wakes the pool loop without blocking; one pending wake-up is enough.
@@ -296,11 +338,26 @@ func (w *pool) setInstallations(repos []github.Repo) {
 	}
 }
 
-// expire releases reservations older than reserveTimeout, for jobs GitHub ran elsewhere without telling us.
+// expire releases reservations older than reserveTimeout, for jobs GitHub ran elsewhere without telling us,
+// and forgets exited runners and awaited claims that old.
 func (w *pool) expire() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	now := w.p.now()
+	for name, ex := range w.exited {
+		if now.Sub(ex.exited) <= w.reserveTimeout {
+			continue
+		}
+		delete(w.exited, name)
+		if !ex.claimed {
+			w.p.logger.Warn("warm runner exited without a job", logkey.Repo, ex.repo.name, logkey.RunnerName, name)
+		}
+	}
+	for id, c := range w.awaiting {
+		if now.Sub(c.completed) > w.reserveTimeout {
+			delete(w.awaiting, id)
+		}
+	}
 	for _, r := range w.repos {
 		for id, at := range r.reserved {
 			if now.Sub(at) > w.reserveTimeout {
@@ -421,6 +478,10 @@ func (w *pool) runWarm(ctx context.Context, r *warmRepo) {
 	delete(r.retiring, name)
 	delete(r.busy, name)
 	delete(w.warm, name)
+	// A short job can end before its events arrive. A retired runner took none, and a failed idle one is handled below.
+	if !retired && (!wasIdle || err == nil) {
+		w.exited[name] = &exitedRunner{repo: r, exited: w.p.now(), claimed: !wasIdle}
+	}
 	if wasIdle {
 		r.pending++
 	}
@@ -444,7 +505,7 @@ func (w *pool) runWarm(ctx context.Context, r *warmRepo) {
 	if err != nil {
 		w.backOff(ctx, metrics.StageWorker, err, log)
 	} else {
-		log.Warn("warm runner exited without a job")
+		log.Info("warm runner exited before any job event")
 	}
 	w.release(r)
 }
