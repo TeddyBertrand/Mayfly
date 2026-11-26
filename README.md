@@ -39,11 +39,11 @@ To run Mayfly locally and send it real jobs from GitHub, follow [docs/local-dev.
 
 Baseline of 2026-11-25, unoptimized Mayfly 0.2.6 on an Azure `Standard_B2als_v2` (2 vCPU), median total time over 10 runs ([details](docs/benchmarks.md#baseline-of-2026-11-25-azure-unoptimized-mayfly)):
 
-| workflow | GitHub-hosted | Mayfly | Mayfly with the worker image |
-|---|---|---|---|
-| go-build | 46.5s | 85s | 49s |
-| npm-test | 11s | 31s | 17.5s |
+| workflow | GitHub-hosted | Mayfly | with the worker image | with the warm pool | with both |
+|---|---|---|---|---|---|
+| go-build | 46.5s | 85s | 49s | 83s | 45s |
+| npm-test | 11s | 31s | 17.5s | 28s | 13s |
 
-The last column is release 0.3.6 with Go and Node baked into the worker image, same host and harness ([details](docs/benchmarks.md#pre-baked-worker-image-of-2026-11-25-azure)); the first two are the baseline above, hosted numbers from run A.
+All numbers are from run A of each setup, on the same host size and harness settings. The hosted and plain Mayfly columns are the baseline above. The worker image bakes in Go and Node (release 0.3.6, [details](docs/benchmarks.md#pre-baked-worker-image-of-2026-11-25-azure)). The warm pool is release 0.3.9 ([details](docs/benchmarks.md#warm-pool-of-2026-11-26-azure-alone-and-with-the-worker-image)): it halves the time to a job's first step, from about 10s to 5s. In the same runs as "with both", hosted runners took 48s and 13s, so Mayfly is on par with them on these two workflows, run one job at a time.
 
 **Status:** M1 core loop works: a `workflow_job` webhook starts a one-job Docker runner that is removed afterwards.

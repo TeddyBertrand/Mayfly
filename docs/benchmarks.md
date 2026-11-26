@@ -200,6 +200,84 @@ The pull happens once per host, and the warm-up iterations of a benchmark never 
 
 Only Go and Node are baked in, and the workloads only use those two, so Rust, C and C++ jobs are not measured and are not faster yet. The remaining `npm-test` gap against hosted (about 4s) is slower install and test steps on 2 shared vCPUs, which caches and tmpfs address in M5. This is two runs on one host on one day.
 
+## Warm pool of 2026-11-26 (Azure), alone and with the worker image
+
+The second M4 step (decisions 025 and 026), measured alone and then combined with the worker image.
+
+| | |
+|---|---|
+| Host | the baseline's: Azure `Standard_B2als_v2` (2 vCPU AMD, 4 GB), Denmark East, `MAYFLY_WORKERS=1` |
+| Mayfly | image `0.3.9`, warm pool on the demo repo with `MAYFLY_POOL_SIZE=1` and the default cap of 2, idle timeout 30m |
+| Pool alone | `worker_image` set to the stock `ghcr.io/actions/actions-runner:2.338.2` |
+| Combined | the default `ghcr.io/teddybertrand/mayfly-worker:0.3.9`; changing the image replaced the VM |
+| Harness | commit `1a4328e`, `hosted,mayfly`, 2 warm-up + 10 measured iterations per cell, as before |
+| Runs | two full runs per setup. Pool alone: [a](../bench/results/2026-11-26-azure-pool-a.md) ([CSV](../bench/results/2026-11-26-azure-pool-a.csv)) and [b](../bench/results/2026-11-26-azure-pool-b.md) ([CSV](../bench/results/2026-11-26-azure-pool-b.csv)). Combined: [a](../bench/results/2026-11-26-azure-image-pool-a.md) ([CSV](../bench/results/2026-11-26-azure-image-pool-a.csv)) and [b](../bench/results/2026-11-26-azure-image-pool-b.md) ([CSV](../bench/results/2026-11-26-azure-image-pool-b.csv)). 0 failed jobs out of 192 |
+
+Each run started only once the host's warm runner was online on GitHub.
+
+### Each step against the baseline
+
+Medians of Mayfly, run A / run B. The baseline and the image alone are the runs of 2026-11-25 above.
+
+| | Baseline | Image alone | Pool alone | Combined |
+|---|---|---|---|---|
+| Queue | 7s / 7s | 7s / 6s | 2s / 2s | 2s / 2s |
+| First step, both workflows | 10s / 9.5-10s | 9.5-10s / 9s | **5s / 5s** | **5s / 5s** |
+| go-build total | 85s / 85.5s | 49s / 49s | 83s / 84.5s | **45s / 45s** |
+| npm-test total | 31s / 32s | 17.5s / 17s | 28s / 29s | **13s / 13s** |
+
+- **First step under 10s: met.** With the pool it starts after 5s at the median in all four runs, and the highest p90 of any Mayfly cell is 7s. The baseline sat at 9.5-10s, so the real result is that startup roughly halved.
+- **The two steps are separate gains.** The pool removes the boot from the wait and barely changes total time beyond that (go-build -1 to -2%, npm-test about -10%), since a stock runner still downloads Go and Node in every job. The image shortens the steps but did not move startup. Only the two together do both: against the baseline, go-build is 47% faster and npm-test 58-59%.
+
+The image-alone runs used 0.3.6 and these use 0.3.9, which adds the pool and its metrics.
+
+### Against GitHub-hosted runners in the same runs
+
+Median total time with the pool and the image, run A / run B:
+
+| workflow | GitHub-hosted | Mayfly | hosted min-max (A, B) | Mayfly min-max (A, B) |
+|---|---|---|---|---|
+| go-build | 48s / 52.5s | 45s / 45s | 36-54s, 36-67s | 44-46s, 44-48s |
+| npm-test | 13s / 14s | 13s / 13s | 10-21s, 10-26s | 12-22s, 12-16s |
+
+The claim these numbers support is **on par with GitHub-hosted runners on these two workflows**. `npm-test` is tied within timestamp resolution. Mayfly's `go-build` median is 3s and 7.5s lower, but hosted times spread widely and their fastest runs beat every Mayfly run, so this is not evidence that Mayfly is faster in general. Its `go-build` times were much steadier.
+
+### What the pool did
+
+Mayfly's own counters and logs, saved before each VM was removed:
+
+| | Pool alone | Combined |
+|---|---|---|
+| Pool requests | 48 hits, 0 misses | 48 hits, 0 misses |
+| Jobs run on a `mayfly-warm-*` runner (CSV) | 48 of 48 | 48 of 48 |
+| Mean claim time | 4.6s | 5.0s |
+| Cold boots, provision failures | 0, 0 | 0, 0 |
+| `WARN` or `ERROR` log lines | 0 | 0 |
+
+Claim time is longer than the 2s queue time because it ends when the `in_progress` webhook reaches Mayfly ([metrics.md](metrics.md)). On the combined host the reaper also removed the offline registration left by the replaced VM. No runner idled long enough to be retired, so retirement was not exercised on Azure.
+
+### Repeatability
+
+`bench compare` exits with status 0 for both setups, with all four cells within ±10%. Pool alone moved 1.1% to 7.7%. Combined moved 0.0% on both Mayfly cells, and 9.4% and 7.7% on the hosted ones.
+
+### CPU credits: partly covered
+
+Azure Monitor's readings cover about one hour of each setup, not the whole of it, because the queries set no end time and the VM was destroyed before this was noticed.
+
+| Setup | Readings (UTC) | CPU Credits Remaining | Average CPU |
+|---|---|---|---|
+| Pool alone (runs 11:52-13:21) | 15-minute points 11:45-12:30 | 60.6 rising to 63.2 | 26-28% |
+| Combined (runs 13:26-14:34) | 15-minute points 13:30-14:00 | 61.1 rising to 62.5 | 25-29% |
+
+Nothing points to throttling: the balance stayed high where it was read, and each run B matched its run A. The later part of each run B has no reading.
+
+### What this does not show
+
+- **The pool at its best.** Jobs ran one at a time with a hosted job in between, so the pool had time to refill. Bursts, misses and the cap were not measured here.
+- **What the pool costs.** An idle runner holds memory and a live registration while it waits; neither was measured.
+- **Readiness.** The pool counts a runner as idle once it is registered, before its container is running and connected. A job could then reserve a runner that is still pulling its image. These runs waited for the runner to be online before starting.
+- Two small workflows, one host size, one day.
+
 ## Running it
 
 The harness dispatches workflows, which needs a token with Actions write on the demo repo. Your `gh` login has it; the GitHub App deliberately does not (read only), so the harness never uses App credentials.
