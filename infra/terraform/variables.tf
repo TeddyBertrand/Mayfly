@@ -64,7 +64,7 @@ variable "app_id" {
 variable "mayfly_version" {
   description = "Release of ghcr.io/teddybertrand/mayfly to run; pinned so every rebuild runs the same code."
   type        = string
-  default     = "0.3.6"
+  default     = "0.3.9"
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.mayfly_version))
