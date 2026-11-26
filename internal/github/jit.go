@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 
 	"github.com/TeddyBertrand/Mayfly/internal/logkey"
 )
@@ -46,13 +47,26 @@ func (j JITConfig) LogValue() slog.Value {
 	return slog.GroupValue(slog.Int64(logkey.RunnerID, j.RunnerID), slog.String(logkey.Encoded, redacted))
 }
 
+// warmRunnerTag marks a warm pool runner's name in place of a job ID, since no job exists yet.
+const warmRunnerTag = "warm"
+
 // RunnerName returns a unique runner name that embeds jobID, e.g. "mayfly-123-a3f9c1".
 func RunnerName(jobID int64) (string, error) {
+	return runnerName(strconv.FormatInt(jobID, 10))
+}
+
+// WarmRunnerName returns a unique name for a warm pool runner, e.g. "mayfly-warm-a3f9c1".
+func WarmRunnerName() (string, error) {
+	return runnerName(warmRunnerTag)
+}
+
+// runnerName returns RunnerNamePrefix, then tag, then a random hex suffix.
+func runnerName(tag string) (string, error) {
 	b := make([]byte, runnerSuffixBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("runner name: %w", err)
 	}
-	return fmt.Sprintf("%s%d-%s", RunnerNamePrefix, jobID, hex.EncodeToString(b)), nil
+	return fmt.Sprintf("%s%s-%s", RunnerNamePrefix, tag, hex.EncodeToString(b)), nil
 }
 
 // GenerateJITConfig registers a just-in-time runner called name with labels on repo ("owner/name").
