@@ -60,6 +60,26 @@ The image is pinned by `mayfly_version` (default `0.3.6`). `compose.yaml` comes 
 
 For benchmarks, `terraform apply -var vm_size=Standard_B2als_v2` (4 GB). Quotas in `denmarkeast`: 10 vCPU for `Basv2`, 4 for `BS`, 6 in total.
 
+## Warm pool and worker image
+
+Both are off or automatic by default. They only reach the host through these variables, which become the matching `MAYFLY_*` settings ([local-dev.md](../docs/local-dev.md) describes each):
+
+| Variable | Default | Setting |
+|---|---|---|
+| `pool_repos` | `""` (no pool) | `MAYFLY_POOL_REPOS` |
+| `pool_size` | `1` | `MAYFLY_POOL_SIZE` |
+| `pool_max` | `null` (twice `pool_size`) | `MAYFLY_POOL_MAX` |
+| `pool_idle_timeout` | `30m` | `MAYFLY_POOL_IDLE_TIMEOUT` |
+| `worker_image` | `""` (matches `mayfly_version`) | `MAYFLY_WORKER_IMAGE` |
+
+The pool needs image 0.3.9 or later; an older one ignores these settings and starts without a pool. For example, a warm pool on the stock runner:
+
+```bash
+terraform apply -var vm_size=Standard_B2als_v2 -var pool_repos=owner/name -var worker_image=ghcr.io/actions/actions-runner:2.338.2
+```
+
+Settings are written on first boot, so changing any of them replaces the VM: its metrics and cached images go with it.
+
 ## Worker egress
 
 An NSG filters by VM, so it cannot tell a worker's packets from the host's, and Azure never applies it to 169.254.169.254 or 168.63.129.16. The rules live on the host instead, in `/usr/local/sbin/mayfly-egress`, run by the `mayfly-egress` systemd unit after Docker starts:
