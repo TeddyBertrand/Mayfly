@@ -75,7 +75,10 @@ func run(logger *slog.Logger) error {
 	}, logger)
 	prov := provisioner.New(gh, backend, provisioner.Options{
 		Labels: rcfg.RunnerLabels, Workers: pcfg.Workers, QueueSize: pcfg.QueueSize, Metrics: m,
-		Pool: provisioner.PoolOptions{Repos: pcfg.PoolRepos, Size: pcfg.PoolSize, Installations: gh},
+		Pool: provisioner.PoolOptions{
+			Repos: pcfg.PoolRepos, Size: pcfg.PoolSize, Max: pcfg.PoolMax, IdleTimeout: pcfg.PoolIdleTimeout,
+			Installations: gh, Remover: gh,
+		},
 	}, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)

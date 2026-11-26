@@ -270,9 +270,9 @@ Keep N idle workers registered and waiting, claim one per job, and refill in the
 - [x] Pool size configurable
 - [x] A claimed worker is never reused
 
-### [provisioner] Pool sizing and scale-down
+### **done** [provisioner] Pool sizing and scale-down (#29)
 Simple policy for pool size (fixed minimum plus burst) and idle timeout so the host is not wasting resources.
-- [ ] Idle workers are retired after the timeout
+- [x] Idle workers are retired after the timeout
 
 ### [observability] Pool metrics
 Add pool size, claim latency and pool-miss metrics to the dashboard.

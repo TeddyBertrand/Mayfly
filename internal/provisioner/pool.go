@@ -2,7 +2,9 @@ package provisioner
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -28,17 +30,28 @@ type RepoLister interface {
 	Repos(ctx context.Context) ([]github.Repo, error)
 }
 
-// PoolOptions configure the warm pool (decision 025). No repositories means no pool.
+// RunnerRemover deletes a runner registration, which GitHub refuses while the runner is busy.
+type RunnerRemover interface {
+	DeleteRunner(ctx context.Context, installationID int64, repo string, runnerID int64) error
+}
+
+// PoolOptions configure the warm pool (decisions 025 and 026). No repositories means no pool.
 type PoolOptions struct {
 	// Repos are the "owner/name" repositories that keep warm runners.
 	Repos []string
 	// Size is how many idle warm runners each repository keeps.
 	Size int
+	// Max caps the warm runners alive per repository, idle and busy; below Size it is raised to Size.
+	Max int
+	// IdleTimeout retires a warm runner that waited that long for a job; zero never retires.
+	IdleTimeout time.Duration
 	// Installations finds each repository's installation ID, which a JIT registration needs.
 	Installations RepoLister
+	// Remover deletes an idle runner's registration before it is retired.
+	Remover RunnerRemover
 }
 
-// warmRepo is the pool state of one repository.
+// warmRepo is the pool state of one repository. A live runner is in exactly one of idle, retiring and busy.
 type warmRepo struct {
 	name string
 	// installationID is 0 until the installation lookup found the repository.
@@ -47,6 +60,10 @@ type warmRepo struct {
 	pending int
 	// idle holds the names of registered runners that have not taken a job.
 	idle map[string]bool
+	// retiring holds idle runners whose registration is being deleted; they no longer count as free.
+	retiring map[string]bool
+	// busy holds warm runners running a job.
+	busy map[string]bool
 	// reserved holds the queued jobs counting on an idle runner, with when they reserved it.
 	reserved map[int64]time.Time
 }
@@ -56,14 +73,32 @@ func (r *warmRepo) available() int {
 	return r.pending + len(r.idle) - len(r.reserved)
 }
 
-// pool keeps idle, registered runners per repository and refills them as jobs take them.
+// alive returns how many warm runners exist or are being started, which the pool's cap bounds.
+func (r *warmRepo) alive() int {
+	return r.pending + len(r.idle) + len(r.retiring) + len(r.busy)
+}
+
+// warmRunner is one registered warm runner.
+type warmRunner struct {
+	repo     *warmRepo
+	runnerID int64
+	// idleSince is when it was registered; it stops mattering once it takes a job.
+	idleSince time.Time
+	// stop cancels the runner's context, which removes its container.
+	stop context.CancelFunc
+}
+
+// pool keeps idle, registered runners per repository and refills them as jobs take them, within a cap.
 // GitHub picks which runner gets a job, so the pool only accounts for that choice through reservations.
 type pool struct {
-	p    *Provisioner
-	size int
-	list RepoLister
-	wake chan struct{}
+	p       *Provisioner
+	size    int
+	max     int
+	list    RepoLister
+	remover RunnerRemover
+	wake    chan struct{}
 
+	idleTimeout    time.Duration
 	reserveTimeout time.Duration
 	sweepInterval  time.Duration
 	retryDelay     time.Duration
@@ -71,8 +106,8 @@ type pool struct {
 
 	mu    sync.Mutex
 	repos map[string]*warmRepo
-	// warm maps every live warm runner, idle or busy, to its repository.
-	warm map[string]*warmRepo
+	// warm maps the name of every registered warm runner to its state.
+	warm map[string]*warmRunner
 }
 
 // newPool returns the warm pool for p as configured by opts, or nil when no repository is pooled.
@@ -81,13 +116,16 @@ func newPool(p *Provisioner, opts PoolOptions) *pool {
 		return nil
 	}
 	w := &pool{
-		p: p, size: opts.Size, list: opts.Installations, wake: make(chan struct{}, 1),
+		p: p, size: opts.Size, max: max(opts.Max, opts.Size), list: opts.Installations, remover: opts.Remover,
+		wake: make(chan struct{}, 1), idleTimeout: opts.IdleTimeout,
 		reserveTimeout: reserveTimeout, sweepInterval: sweepInterval, retryDelay: warmRetryDelay,
 		newName: github.WarmRunnerName,
-		repos:   map[string]*warmRepo{}, warm: map[string]*warmRepo{},
+		repos:   map[string]*warmRepo{}, warm: map[string]*warmRunner{},
 	}
 	for _, name := range opts.Repos {
-		w.repos[repoKey(name)] = &warmRepo{name: name, idle: map[string]bool{}, reserved: map[int64]time.Time{}}
+		w.repos[repoKey(name)] = &warmRepo{
+			name: name, idle: map[string]bool{}, retiring: map[string]bool{}, busy: map[string]bool{}, reserved: map[int64]time.Time{},
+		}
 	}
 	return w
 }
@@ -128,10 +166,14 @@ func (w *pool) update(action workflow.Action, job workflow.Job) (warm bool, rese
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if r := w.warm[job.RunnerName]; r != nil && action == workflow.ActionInProgress {
+	if rn := w.warm[job.RunnerName]; rn != nil && action == workflow.ActionInProgress {
 		warm = true
-		if r.idle[job.RunnerName] {
+		r := rn.repo
+		// A runner being retired can still win a job; then its registration delete fails and it keeps running.
+		if r.idle[job.RunnerName] || r.retiring[job.RunnerName] {
 			delete(r.idle, job.RunnerName)
+			delete(r.retiring, job.RunnerName)
+			r.busy[job.RunnerName] = true
 			if _, ok := r.reserved[job.ID]; !ok {
 				// A job the pool did not expect took the runner, so nothing refilled for it yet.
 				w.signal()
@@ -164,11 +206,13 @@ func (w *pool) run(ctx context.Context) {
 	if !w.resolve(ctx) {
 		return
 	}
-	w.p.logger.Info("warm pool started", logkey.PoolSize, w.size, logkey.Repos, w.names())
+	w.p.logger.Info("warm pool started", logkey.PoolSize, w.size, logkey.PoolMax, w.max,
+		logkey.IdleTimeout, w.idleTimeout.String(), logkey.Repos, w.names())
 	tick := time.NewTicker(w.sweepInterval)
 	defer tick.Stop()
 	for {
 		w.expire()
+		w.retireIdle(ctx, &wg)
 		w.fill(ctx, &wg)
 		select {
 		case <-ctx.Done():
@@ -239,7 +283,63 @@ func (w *pool) expire() {
 	}
 }
 
-// fill starts warm runners until every installed repository has size of them free.
+// retireIdle starts retiring every warm runner idle for longer than idleTimeout.
+func (w *pool) retireIdle(ctx context.Context, wg *sync.WaitGroup) {
+	if w.idleTimeout == 0 {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	now := w.p.now()
+	for name, rn := range w.warm {
+		r := rn.repo
+		if !r.idle[name] || now.Sub(rn.idleSince) < w.idleTimeout {
+			continue
+		}
+		delete(r.idle, name)
+		r.retiring[name] = true
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w.retire(ctx, name, rn)
+		}()
+	}
+}
+
+// retire deletes the registration of the idle runner name, then stops its container. Deleting first means
+// GitHub cannot hand it a job while it is being stopped. A failed delete puts it back to idle for the next sweep.
+func (w *pool) retire(ctx context.Context, name string, rn *warmRunner) {
+	log := w.p.logger.With(logkey.Repo, rn.repo.name, logkey.RunnerName, name, logkey.RunnerID, rn.runnerID)
+	dctx, cancel := context.WithTimeout(ctx, jitTimeout)
+	err := w.remover.DeleteRunner(dctx, rn.repo.installationID, rn.repo.name, rn.runnerID)
+	cancel()
+	var apiErr *github.APIError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+		// Already deregistered, so it cannot take a job either.
+		err = nil
+	}
+
+	w.mu.Lock()
+	retiring := rn.repo.retiring[name]
+	if err != nil && retiring {
+		delete(rn.repo.retiring, name)
+		rn.repo.idle[name] = true
+	}
+	w.mu.Unlock()
+	switch {
+	case err != nil:
+		if ctx.Err() == nil {
+			log.Warn("idle warm runner not retired, kept", logkey.Err, err)
+		}
+	case !retiring:
+		log.Warn("warm runner took a job while its registration was deleted, left running")
+	default:
+		rn.stop()
+		log.Info("idle warm runner retired", logkey.IdleTimeout, w.idleTimeout.String())
+	}
+}
+
+// fill starts warm runners until every installed repository has size of them free, without exceeding max alive.
 func (w *pool) fill(ctx context.Context, wg *sync.WaitGroup) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -250,7 +350,7 @@ func (w *pool) fill(ctx context.Context, wg *sync.WaitGroup) {
 		if r.installationID == 0 {
 			continue
 		}
-		for r.available() < w.size {
+		for r.available() < w.size && r.alive() < w.max {
 			r.pending++
 			wg.Add(1)
 			go func() {
@@ -272,29 +372,39 @@ func (w *pool) runWarm(ctx context.Context, r *warmRepo) {
 	}
 	log = log.With(logkey.RunnerName, name)
 	log.Info("warm runner registered", logkey.RunnerID, cfg.RunnerID)
+	// Its own context lets retirement stop this runner alone.
+	rctx, stop := context.WithCancel(ctx)
+	defer stop()
 	w.mu.Lock()
 	r.pending--
 	r.idle[name] = true
-	w.warm[name] = r
+	w.warm[name] = &warmRunner{repo: r, runnerID: cfg.RunnerID, idleSince: w.p.now(), stop: stop}
 	w.mu.Unlock()
 
 	w.p.metrics.WorkersAlive.Inc()
-	err = w.p.backend.Run(ctx, worker.Spec{
+	err = w.p.backend.Run(rctx, worker.Spec{
 		RunnerName: name, JITConfig: cfg.Encoded, Repo: r.name, InstallationID: r.installationID, RunnerID: cfg.RunnerID,
 	})
 	w.p.metrics.WorkersAlive.Dec()
 
 	w.mu.Lock()
-	wasIdle := r.idle[name]
+	wasIdle, retired := r.idle[name], r.retiring[name]
 	delete(r.idle, name)
+	delete(r.retiring, name)
+	delete(r.busy, name)
 	delete(w.warm, name)
 	if wasIdle {
 		r.pending++
 	}
 	w.mu.Unlock()
 
-	if !wasIdle {
-		// It took a job, whose claim already refilled the pool.
+	switch {
+	case retired:
+		w.signal()
+		return
+	case !wasIdle:
+		// Its claim already refilled the pool, but its exit makes room under the cap.
+		w.signal()
 		if err != nil && ctx.Err() == nil {
 			w.p.metrics.ProvisionFailures.WithLabelValues(metrics.StageWorker).Inc()
 			log.Error("warm worker failed", logkey.Err, err)
