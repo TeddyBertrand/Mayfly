@@ -48,6 +48,8 @@ const (
 	PoolMax      = "pool_max"
 	IdleTimeout  = "idle_timeout"
 	Repos        = "repos"
+	State        = "state"
+	Result       = "result"
 )
 
 // Keys for worker containers.

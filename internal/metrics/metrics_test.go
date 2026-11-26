@@ -14,6 +14,8 @@ func TestHandlerServesEveryMetric(t *testing.T) {
 	m := NewMayfly(reg)
 	NewReaper(reg)
 	m.Jobs.WithLabelValues("success").Inc()
+	m.PresetPool("octo/demo")
+	m.RegisterPool(func() []PoolRepo { return []PoolRepo{{Repo: "octo/demo", Idle: 1, Max: 2}} })
 
 	rec := httptest.NewRecorder()
 	Handler(reg).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -29,6 +31,10 @@ func TestHandlerServesEveryMetric(t *testing.T) {
 		`mayfly_jobs_total{conclusion="failure"} 0`,
 		`mayfly_provision_failures_total{stage="worker"} 0`,
 		`mayfly_retries_total{op="jit_config"} 0`,
+		`mayfly_pool_runners{repo="octo/demo",state="idle"} 1`,
+		`mayfly_pool_max_runners{repo="octo/demo"} 2`,
+		`mayfly_pool_requests_total{repo="octo/demo",result="miss_max"} 0`,
+		"mayfly_pool_claim_seconds_bucket",
 		"mayfly_reaper_registrations_removed_total",
 		"mayfly_reaper_sweep_failures_total",
 		"mayfly_reaper_last_sweep_timestamp_seconds",
@@ -41,7 +47,7 @@ func TestHandlerServesEveryMetric(t *testing.T) {
 
 // TestNilRegistererIsReusable checks unregistered metrics can be built twice, which a real registry refuses.
 func TestNilRegistererIsReusable(t *testing.T) {
-	NewMayfly(nil)
+	NewMayfly(nil).RegisterPool(func() []PoolRepo { return nil })
 	NewMayfly(nil)
 	NewReaper(nil)
 	NewReaper(nil)
