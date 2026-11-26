@@ -126,8 +126,34 @@ func newPool(p *Provisioner, opts PoolOptions) *pool {
 		w.repos[repoKey(name)] = &warmRepo{
 			name: name, idle: map[string]bool{}, retiring: map[string]bool{}, busy: map[string]bool{}, reserved: map[int64]time.Time{},
 		}
+		p.metrics.PresetPool(name)
 	}
 	return w
+}
+
+// snapshot returns the size of each repository's pool, for the pool gauges.
+func (w *pool) snapshot() []metrics.PoolRepo {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := make([]metrics.PoolRepo, 0, len(w.repos))
+	for _, r := range w.repos {
+		out = append(out, metrics.PoolRepo{
+			Repo: r.name, Pending: r.pending, Idle: len(r.idle), Busy: len(r.busy), Retiring: len(r.retiring), Max: w.max,
+		})
+	}
+	return out
+}
+
+// miss returns why r has no free runner, as a result label value. Callers hold mu.
+func (w *pool) miss(r *warmRepo) string {
+	switch {
+	case r.installationID == 0:
+		return metrics.PoolMissUnresolved
+	case r.alive() >= w.max:
+		return metrics.PoolMissMax
+	default:
+		return metrics.PoolMissEmpty
+	}
 }
 
 // repoKey returns the map key of a repository, since GitHub names are case-insensitive.
@@ -151,8 +177,10 @@ func (w *pool) reserve(job workflow.Job) (reserved, pooled bool) {
 		return true, true
 	}
 	if r.installationID == 0 || r.available() <= 0 {
+		w.p.metrics.PoolRequests.WithLabelValues(r.name, w.miss(r)).Inc()
 		return false, true
 	}
+	w.p.metrics.PoolRequests.WithLabelValues(r.name, metrics.PoolHit).Inc()
 	r.reserved[job.ID] = w.p.now()
 	w.signal()
 	return true, true
