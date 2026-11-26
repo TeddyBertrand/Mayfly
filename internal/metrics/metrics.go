@@ -51,11 +51,17 @@ type Mayfly struct {
 	Jobs              *prometheus.CounterVec
 	ProvisionFailures *prometheus.CounterVec
 	Retries           *prometheus.CounterVec
+	PoolRequests      *prometheus.CounterVec
+	PoolClaimSeconds  prometheus.Histogram
+
+	// reg is kept for RegisterPool, whose gauges need the pool to exist first.
+	reg prometheus.Registerer
 }
 
 // NewMayfly creates the mayfly metrics and registers them with reg; a nil reg leaves them unregistered, for tests.
 func NewMayfly(reg prometheus.Registerer) *Mayfly {
 	m := newMayfly(promauto.With(reg))
+	m.reg = reg
 	Preset(m.Jobs, knownConclusions...)
 	Preset(m.ProvisionFailures, StageJITConfig, StageWorker)
 	Preset(m.Retries, OpJITConfig, OpWorkerStart)
@@ -79,7 +85,7 @@ func newMayfly(f promauto.Factory) *Mayfly {
 		}),
 		BootSeconds: f.NewHistogram(prometheus.HistogramOpts{
 			Namespace: namespace, Name: "worker_boot_seconds",
-			Help:    "Time from mayfly accepting a queued job to its runner picking up a job, on mayfly's clock.",
+			Help:    "Time from mayfly accepting a queued job to the cold worker it started picking up a job, on mayfly's clock.",
 			Buckets: waitBuckets,
 		}),
 		JobSeconds: f.NewHistogram(prometheus.HistogramOpts{
@@ -107,6 +113,15 @@ func newMayfly(f promauto.Factory) *Mayfly {
 			Namespace: namespace, Name: "retries_total",
 			Help: "Retried attempts of a failed call, by operation.",
 		}, []string{logkey.Op}),
+		PoolRequests: f.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: subsystemPool, Name: "requests_total",
+			Help: "Queued jobs of pooled repositories, by whether they reserved a warm runner and why not.",
+		}, []string{logkey.Repo, logkey.Result}),
+		PoolClaimSeconds: f.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace, Subsystem: subsystemPool, Name: "claim_seconds",
+			Help:    "Time from a queued job reserving a warm runner to a warm runner picking it up, on mayfly's clock.",
+			Buckets: claimBuckets,
+		}),
 	}
 }
 

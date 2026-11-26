@@ -64,7 +64,7 @@ variable "app_id" {
 variable "mayfly_version" {
   description = "Release of ghcr.io/teddybertrand/mayfly to run; pinned so every rebuild runs the same code."
   type        = string
-  default     = "0.3.6"
+  default     = "0.3.9"
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.mayfly_version))
@@ -82,6 +82,62 @@ variable "workers" {
   description = "Maximum concurrent workers (MAYFLY_WORKERS); keep it low on the 1 GB size."
   type        = number
   default     = 1
+}
+
+variable "worker_image" {
+  description = "Worker image (MAYFLY_WORKER_IMAGE); empty uses the one matching mayfly_version (decision 024)."
+  type        = string
+  default     = ""
+
+  validation {
+    # The value lands in the host's .env, where spaces, "$" and "#" would change its meaning.
+    condition     = can(regex("^[A-Za-z0-9._/:@-]*$", var.worker_image))
+    error_message = "worker_image must be an image reference such as ghcr.io/actions/actions-runner:2.338.2."
+  }
+}
+
+variable "pool_repos" {
+  description = "Comma-separated owner/name repositories that keep warm runners (MAYFLY_POOL_REPOS); empty disables the pool."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^([A-Za-z0-9._-]+/[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+/[A-Za-z0-9._-]+)*)?$", var.pool_repos))
+    error_message = "pool_repos must be empty or owner/name entries separated by commas, without spaces."
+  }
+}
+
+variable "pool_size" {
+  description = "Idle warm runners per pooled repository (MAYFLY_POOL_SIZE)."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.pool_size >= 1 && floor(var.pool_size) == var.pool_size
+    error_message = "pool_size must be a whole number of at least 1."
+  }
+}
+
+variable "pool_max" {
+  description = "Cap on warm runners alive per pooled repository (MAYFLY_POOL_MAX); null uses mayfly's default, twice pool_size."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.pool_max == null ? true : var.pool_max >= var.pool_size && floor(var.pool_max) == var.pool_max
+    error_message = "pool_max must be null or a whole number of at least pool_size."
+  }
+}
+
+variable "pool_idle_timeout" {
+  description = "How long a warm runner may idle before it is replaced (MAYFLY_POOL_IDLE_TIMEOUT), such as 30m."
+  type        = string
+  default     = "30m"
+
+  validation {
+    condition     = can(regex("^([0-9]+(h|m|s))+$", var.pool_idle_timeout))
+    error_message = "pool_idle_timeout must be a duration such as 30m or 1h30m."
+  }
 }
 
 variable "key_vault_name" {

@@ -56,9 +56,29 @@ Each rebuild has a new SSH host key under the same name, so `ssh` warns that the
 
 `make dev` points the App webhook back at your tunnel; run `go run ./cmd/setwebhook "$(terraform output -raw webhook_url)"` to send it to the host again.
 
-The image is pinned by `mayfly_version` (default `0.3.6`). `compose.yaml` comes from your checkout while the image comes from that version, so apply from a checkout that matches it: since 0.2.5 the reaper probes the ops port 8081, which older images do not open (decision 018). On the host, the deploy lives in `/opt/mayfly`, runs as `mayfly.service`, and logs with `journalctl -u mayfly` and `docker compose -f /opt/mayfly/compose.yaml logs`.
+The image is pinned by `mayfly_version` (default `0.3.9`). `compose.yaml` comes from your checkout while the image comes from that version, so apply from a checkout that matches it: since 0.2.5 the reaper probes the ops port 8081, which older images do not open (decision 018). On the host, the deploy lives in `/opt/mayfly`, runs as `mayfly.service`, and logs with `journalctl -u mayfly` and `docker compose -f /opt/mayfly/compose.yaml logs`.
 
 For benchmarks, `terraform apply -var vm_size=Standard_B2als_v2` (4 GB). Quotas in `denmarkeast`: 10 vCPU for `Basv2`, 4 for `BS`, 6 in total.
+
+## Warm pool and worker image
+
+Both are off or automatic by default. They only reach the host through these variables, which become the matching `MAYFLY_*` settings ([local-dev.md](../docs/local-dev.md) describes each):
+
+| Variable | Default | Setting |
+|---|---|---|
+| `pool_repos` | `""` (no pool) | `MAYFLY_POOL_REPOS` |
+| `pool_size` | `1` | `MAYFLY_POOL_SIZE` |
+| `pool_max` | `null` (twice `pool_size`) | `MAYFLY_POOL_MAX` |
+| `pool_idle_timeout` | `30m` | `MAYFLY_POOL_IDLE_TIMEOUT` |
+| `worker_image` | `""` (matches `mayfly_version`) | `MAYFLY_WORKER_IMAGE` |
+
+The pool needs image 0.3.9 or later; an older one ignores these settings and starts without a pool. For example, a warm pool on the stock runner:
+
+```bash
+terraform apply -var vm_size=Standard_B2als_v2 -var pool_repos=owner/name -var worker_image=ghcr.io/actions/actions-runner:2.338.2
+```
+
+Settings are written on first boot, so changing any of them replaces the VM: its metrics and cached images go with it.
 
 ## Worker egress
 

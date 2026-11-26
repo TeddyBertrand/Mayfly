@@ -285,3 +285,51 @@ Each entry records one decision, the options considered and the consequences. En
   - A local `make dev` runs the stock image, without the baked toolchains, unless `MAYFLY_WORKER_IMAGE=mayfly-worker:dev` is set after `docker build`; the startup log shows which one is in use.
   - The `classic` runner in `compose.yaml` still uses the stock image, so "same image as Mayfly's workers" in `docs/benchmarks.md` no longer holds; whether `classic` moves to the baked image is decided with the benchmark (#31).
   - A new ghcr.io package is private by default, so the deploy host may need access to pull `mayfly-worker` before the first benchmark.
+
+## 025. Warm pool of fully started runners, per configured repository
+- **Date:** 2026-11-26
+- **Status:** accepted
+- **Context:** #28. The image benchmark (#31) left startup unchanged: queue 6-7 s and first step 9-10 s, against 3 s and 5.5 s hosted. About 4 s of boot (JIT call, container start, runner start and connection to GitHub) runs after the `queued` webhook, on the critical path. JIT configs are repository-scoped (`/repos/{repo}/actions/runners/generate-jitconfig`), and the owner is a user account, which has no account-level runners. GitHub, not Mayfly, assigns a queued job to an idle runner with matching labels. Each JIT runner takes one job and is then removed, which must hold for warm workers too.
+- **Options considered:**
+  - **A. Fully warm runners per repository:** keep N containers per configured repository that are JIT-registered, started and connected, waiting for a job. Takes the whole boot off the critical path. Needs a repository list, and idle runners cost memory and hold a live registration while they wait.
+  - **B. Pre-started containers that register on claim:** start containers with no credential and hand them a JIT config on `queued`. Works for any repository with no credential waiting, but still pays the JIT call and the runner's start and connection, and needs a new handoff mechanism in the worker image.
+  - **C. Banked JIT configs only:** pre-register runners and start the container on `queued`. Smallest change and no idle memory, but saves only the API call, and the unconnected registrations show as offline runners.
+- **Decision:** A. The pooled repositories come from configuration. On `queued`, a repository with an idle warm runner gets no cold worker and its pool is refilled in the background; a repository without one falls back to the cold path, counted as a pool miss.
+- **Consequences:**
+  - One job per worker still holds by construction: a warm runner is an ordinary JIT runner, so it runs one job and is deregistered.
+  - Mayfly cannot claim a runner, only account for GitHub's choice. Refills must count the warm runners actually idle (matched by runner name on `in_progress`, as the tracker already does) rather than trust a counter decremented on `queued`.
+  - Costs: a new setting listing repositories, idle memory per warm runner on a small host, and a registration that lives as long as the runner idles. The idle timeout of #29 is therefore a security limit as well as a cost one, and the reaper must treat an idle warm runner as expected rather than stale.
+  - Warm runners run outside the `MAYFLY_WORKERS` goroutines, since an idle one holding a slot would starve cold jobs. The host can therefore run up to `MAYFLY_WORKERS` cold workers, plus the idle pool, plus warm runners busy with jobs; a cap on the total is settled in #29.
+  - The worker timeout counts from container start, so a warm runner's idle time uses up its `MAYFLY_WORKER_TIMEOUT` until #29 adds an idle timeout.
+  - Revisit if the pooled repositories grow past what the host can keep idle, or if the benchmark shows the runner's connection was not the main cost of boot.
+
+## 026. Warm pool sized by a fixed minimum and a total cap, idle runners rotated
+- **Date:** 2026-11-26
+- **Status:** accepted
+- **Context:** #29. The pool of decision 025 refills after every claim and does not count busy warm runners, so a burst of queued jobs on one repository starts about one warm container per job, with no upper bound, on a 4 GB host. Its idle runners also use up `MAYFLY_WORKER_TIMEOUT` and keep a live registration for as long as they wait. The brief asks for little wasted capacity and tracks cost per job.
+- **Options considered:**
+  - **A. Fixed minimum, total cap, idle runners rotated:** keep `min` runners idle per repository, refill after a claim only while fewer than `max` warm runners (idle and busy) are alive, and retire a runner idle past a timeout, replacing it only to stay at `min`. Smallest change to the pool's accounting; after a burst the pool falls straight back to `min`.
+  - **B. Minimum plus a demand-driven burst:** as A, but each pool miss raises the repository's idle target by one up to `max`, and runners above `min` that idle past the timeout are retired, so the target decays; `min` can be 0. Adapts to real use, at the cost of more state per repository and a less predictable pool.
+  - **C. One global cap for cold and warm workers:** tightest host protection, but couples both paths, needs a fairness rule between them and a rewrite of the cold path's fixed goroutines.
+- **Decision:** A. `MAYFLY_POOL_SIZE` stays the minimum (default 1), `MAYFLY_POOL_MAX` caps warm runners alive per repository (default twice the minimum, never below it), and `MAYFLY_POOL_IDLE_TIMEOUT` (default 30 minutes) retires idle runners. A job that finds the cap reached takes the cold path. A runner is retired by deleting its registration on GitHub first and stopping its container only once that succeeded, so GitHub cannot hand it a job while it is being stopped; a failed delete leaves the runner running.
+- **Consequences:**
+  - The host runs at most `MAYFLY_WORKERS` cold workers plus `MAYFLY_POOL_MAX` warm runners per pooled repository.
+  - Rotation bounds how long an idle registration lives and keeps idle time far below the worker timeout, at the cost of one registration and container start per idle slot per timeout.
+  - A burst larger than `max`, such as a wide matrix, still runs partly cold, and the pool keeps no memory of it. The retire path relies on GitHub refusing to delete a busy runner, to be confirmed against the real API.
+  - Revisit with option B if the #31 benchmark or the pool-miss metric (#30) shows repeated bursts above the minimum.
+
+## 027. Pool metrics: claim time apart from boot time, size read at scrape
+- **Date:** 2026-11-26
+- **Status:** accepted
+- **Context:** #30. The dashboard needs pool size, claim latency and pool misses, and decision 026 relies on the miss metric to judge the pool's sizing. Warm claims were recorded in `mayfly_worker_boot_seconds`, mixed with cold starts, and pool size existed only in the pool's memory.
+- **Options considered:**
+  - **Claim latency, A. Its own histogram, boot time kept for cold starts:** buckets can go below 1 s, and each name means one thing. Boot time changes meaning, so older data is not directly comparable.
+  - **Claim latency, B. A `path=warm|cold` label on boot time:** easy to compare and existing queries keep working, but both paths share buckets starting at 1, 2 and 5 s, and nothing boots on the warm path.
+  - **Pool size, A. A custom collector reading the pool at each scrape:** the gauges cannot drift from the pool's state, at the cost of a little more code and a short lock of the pool per scrape.
+  - **Pool size, B. Gauges updated at each state change:** the more familiar pattern, but registration, claim, retirement and exit all change the state, and one missed update leaves a wrong value until restart.
+- **Decision:** A for both. Misses are counted by reason (`miss_empty`, `miss_max`, `miss_unresolved`), in the same counter as hits so the hit rate is one division.
+- **Consequences:**
+  - From this version, `mayfly_worker_boot_seconds` covers cold starts only, so its values before and after are not comparable when a pool is configured.
+  - A hit is a reservation, not proof that a warm runner ran the job: GitHub chooses the runner, and a reservation can expire.
+  - A job that missed and was then taken by a warm runner has no claim time, since nothing recorded when it started waiting for one.
+  - `miss_max` points at the cap (`MAYFLY_POOL_MAX`). `miss_empty` points at refills slower than the arrival of jobs, which a higher `MAYFLY_POOL_SIZE` would absorb.

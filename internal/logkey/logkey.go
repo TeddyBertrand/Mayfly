@@ -44,6 +44,12 @@ const (
 	QueueSize    = "queue_size"
 	Op           = "op"
 	Stage        = "stage"
+	PoolSize     = "pool_size"
+	PoolMax      = "pool_max"
+	IdleTimeout  = "idle_timeout"
+	Repos        = "repos"
+	State        = "state"
+	Result       = "result"
 )
 
 // Keys for worker containers.

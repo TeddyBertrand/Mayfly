@@ -260,38 +260,56 @@ Publish v0.3.5 (decision 010) so `main` ships the end of M3.5: the reaper split 
 
 ## M4 - Optimization: startup
 
-### [worker] Pre-baked worker image
+### **done** [worker] Pre-baked worker image (#27)
 Image with common toolchains (Go, Node, Python) and frequently used Docker images already pulled. Reproducible build, versioned tags. The before and after measurement is done in the benchmark issue below.
-- [ ] Image published for amd64 and arm64 with versioned tags
+- [x] Image published for amd64 and arm64 with versioned tags
 - [x] Mayfly uses it by default
 
-### [worker] Warm pool of pre-started workers
+### **done** [worker] Warm pool of pre-started workers (#28)
 Keep N idle workers registered and waiting, claim one per job, and refill in the background. Must respect the one-job-per-worker rule and security isolation.
-- [ ] Pool size configurable
-- [ ] A claimed worker is never reused
+- [x] Pool size configurable
+- [x] A claimed worker is never reused
 
-### [provisioner] Pool sizing and scale-down
+### **done** [provisioner] Pool sizing and scale-down (#29)
 Simple policy for pool size (fixed minimum plus burst) and idle timeout so the host is not wasting resources.
-- [ ] Idle workers are retired after the timeout
+- [x] Idle workers are retired after the timeout
 
-### [observability] Pool metrics
+### **done** [observability] Pool metrics (#30)
 Add pool size, claim latency and pool-miss metrics to the dashboard.
-- [ ] Panels added
+- [x] Panels added
+
+### **done** [provisioner] Handle late events for exited warm runners (#140)
+A local run of the warm pool against GitHub showed a 5s job whose `completed` and then `in_progress` webhooks arrived after its runner's container had exited: the pool warned that the runner took no job and recorded no claim time. Idle retirement also logged an `ERROR` for the stop it asked for.
+- [x] A warm runner whose events arrive after it exits is still recognised, in either order
+- [x] A claim time is recorded once if the job had a reservation and its `in_progress` event arrives within the waiting period
+- [x] "Exited without a job" is logged only if no event arrives within that period
+- [x] Deliberately stopping a worker logs no `ERROR`
+- [x] The docs say claim time includes notification delay, which can be most of it
 
 ### [bench] Benchmark: image and warm pool
 Run the harness for each step on its own and combined, and add rows to the table.
-- [ ] Image alone measured against the baseline (boot-to-first-step and total time), with the image size recorded
+- [x] Image alone measured against the baseline (boot-to-first-step and total time), with the image size recorded
 - [ ] First step starts in under 10s (or the gap is explained)
 
-### [ci] Release v0.3.6
+### **done** [ci] Release v0.3.6 (#132)
 Publish v0.3.6 (decision 010) so `main` ships the pre-baked worker image (#27, decisions 022 to 024) and the Azure benchmark of the image alone (#31) can pull it. A patch version, because it lands between milestones: 0.4.0 stays for the end of M4, once the warm pool exists. The release publishes `mayfly-worker:0.3.6` next to the `mayfly` image, and a 0.3.6 binary defaults to it. Moves the Terraform default `mayfly_version` to `0.3.6` to keep it aligned.
-- [ ] `VERSION` is `0.3.6` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.3.6` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.3.6` published for amd64 and arm64
-- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.3.6` published for amd64 and arm64
-- [ ] `mayfly --version` in the image prints `0.3.6`
+- [x] `VERSION` is `0.3.6` on `dev` and merged into `main`
+- [x] GitHub Release `v0.3.6` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.3.6` published for amd64 and arm64
+- [x] `ghcr.io/teddybertrand/mayfly-worker:0.3.6` published for amd64 and arm64
+- [x] `mayfly --version` in the image prints `0.3.6`
+- [x] The deploy host can pull `mayfly-worker` (package visibility checked)
+- [x] Terraform default `mayfly_version` is `0.3.6`
+
+### [ci] Release v0.3.9 (#143)
+Publish v0.3.9 (decision 010) so `main` ships the warm pool (#28, #29, decisions 025 and 026), its metrics and dashboard row (#30, decision 027), the fix for late warm runner events (#140) and the Azure settings for the pool and worker image, which the rest of the benchmark (#31) needs. A patch version, because it lands before the end of M4: 0.4.0 stays for that, once the pool is benchmarked. Moves the Terraform default `mayfly_version` to `0.3.9` to keep it aligned.
+- [ ] `VERSION` is `0.3.9` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.3.9` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.3.9` published for amd64 and arm64
+- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.3.9` published for amd64 and arm64
+- [ ] `mayfly --version` in the image prints `0.3.9`
 - [ ] The deploy host can pull `mayfly-worker` (package visibility checked)
-- [ ] Terraform default `mayfly_version` is `0.3.6`
+- [ ] Terraform default `mayfly_version` is `0.3.9`
 
 ## M5 - Optimization: caching and disk
 
