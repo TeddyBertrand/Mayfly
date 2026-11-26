@@ -112,6 +112,11 @@ func (b *Backend) Run(ctx context.Context, spec worker.Spec) error {
 			log.Warn("worker timed out", logkey.Timeout, b.timeout.String())
 			return fmt.Errorf("worker timed out after %s: %w", b.timeout, ctx.Err())
 		}
+		if errors.Is(ctx.Err(), context.Canceled) {
+			// The caller asked for the stop (retirement, cancelled job or shutdown), so nothing failed.
+			log.Info("worker stopped before it exited")
+			return err
+		}
 		log.Error("worker wait failed", logkey.Err, err)
 		return err
 	}
