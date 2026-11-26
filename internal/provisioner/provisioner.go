@@ -44,6 +44,8 @@ type Provisioner struct {
 	retry   retry.Policy
 	metrics *metrics.Mayfly
 	now     func() time.Time
+	// pool is nil when no repository keeps warm runners.
+	pool *pool
 }
 
 // Options configure a Provisioner.
@@ -56,6 +58,8 @@ type Options struct {
 	QueueSize int
 	// Metrics receives job and worker metrics; nil uses unregistered ones.
 	Metrics *metrics.Mayfly
+	// Pool keeps warm runners; its zero value disables it.
+	Pool PoolOptions
 }
 
 // New returns a Provisioner that registers runners through jit and runs them on backend, as configured by opts.
@@ -64,7 +68,7 @@ func New(jit JITIssuer, backend worker.Backend, opts Options, logger *slog.Logge
 	if m == nil {
 		m = metrics.NewMayfly(nil)
 	}
-	return &Provisioner{
+	p := &Provisioner{
 		jit:     jit,
 		backend: backend,
 		labels:  runnerLabels(opts.Labels),
@@ -77,11 +81,23 @@ func New(jit JITIssuer, backend worker.Backend, opts Options, logger *slog.Logge
 		metrics: m,
 		now:     time.Now,
 	}
+	p.pool = newPool(p, opts.Pool)
+	return p
 }
 
-// Enqueue tracks job as waiting and adds it to the queue without blocking, returning ErrQueueFull
-// when it is full. A job that is already tracked is ignored.
+// Enqueue hands job to a free warm runner of its repository, or else tracks it as waiting and adds it
+// to the queue without blocking, returning ErrQueueFull when it is full. A job already tracked is ignored.
 func (p *Provisioner) Enqueue(job workflow.Job) error {
+	if _, tracked := p.jobs.state(job.ID); !tracked {
+		reserved, pooled := p.pool.reserve(job)
+		if reserved {
+			p.logger.Info("job reserved a warm runner", logkey.JobID, job.ID, logkey.Repo, job.Repo)
+			return nil
+		}
+		if pooled {
+			p.logger.Info("no warm runner free, cold start", logkey.JobID, job.ID, logkey.Repo, job.Repo)
+		}
+	}
 	if !p.jobs.add(job.ID, p.now()) {
 		p.logger.Info("job already tracked, queued event ignored", logkey.JobID, job.ID, logkey.Repo, job.Repo)
 		return nil
@@ -101,6 +117,18 @@ func (p *Provisioner) Enqueue(job workflow.Job) error {
 func (p *Provisioner) Update(action workflow.Action, job workflow.Job) {
 	log := p.logger.With(logkey.Action, action, logkey.JobID, job.ID, logkey.Repo, job.Repo, logkey.RunnerName, job.RunnerName)
 	p.observe(action, job)
+	if warm, reservedAt := p.pool.update(action, job); warm {
+		if !reservedAt.IsZero() {
+			p.metrics.BootSeconds.Observe(p.now().Sub(reservedAt).Seconds())
+		}
+		// A cold worker started for this job before the pool could serve it would otherwise idle until its timeout.
+		if c, err := p.jobs.drop(job.ID); err == nil {
+			log.Info("warm runner took the job, cold worker dropped", logkey.From, c.From.String())
+			return
+		}
+		log.Info("warm runner took the job")
+		return
+	}
 	c, err := p.jobs.update(action, job)
 	switch {
 	case errors.Is(err, errUntracked):
@@ -115,10 +143,17 @@ func (p *Provisioner) Update(action workflow.Action, job workflow.Job) {
 	}
 }
 
-// Run processes queued jobs until ctx is cancelled, then waits for in-flight workers to be cleaned up.
-// Cancelling ctx stops running workers, so their jobs fail on GitHub.
+// Run processes queued jobs and keeps the warm pool full until ctx is cancelled, then waits for
+// in-flight workers to be cleaned up. Cancelling ctx stops running workers, so their jobs fail on GitHub.
 func (p *Provisioner) Run(ctx context.Context) {
 	var wg sync.WaitGroup
+	if p.pool != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.pool.run(ctx)
+		}()
+	}
 	for range p.workers {
 		wg.Add(1)
 		go func() {

@@ -168,6 +168,24 @@ func (t *tracker) update(action workflow.Action, job workflow.Job) (change, erro
 	return c, nil
 }
 
+// drop moves id to Dropped and cancels its worker, failing if id is untracked or already running.
+func (t *tracker) drop(id int64) (change, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e, ok := t.jobs[id]
+	if !ok {
+		return change{ID: id}, errUntracked
+	}
+	c := change{ID: id, From: e.state, To: Dropped, Accepted: e.accepted}
+	if _, err := t.move(id, Dropped); err != nil {
+		return c, err
+	}
+	if e.cancel != nil {
+		e.cancel()
+	}
+	return c, nil
+}
+
 // find returns the entry whose runner is job.RunnerName, or else the entry for job.ID. Callers hold mu.
 func (t *tracker) find(job workflow.Job) (int64, *entry) {
 	if job.RunnerName != "" {

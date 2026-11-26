@@ -92,7 +92,7 @@ func (s *syncBuffer) String() string {
 }
 
 // newTestProvisioner returns a Provisioner over the fakes and a buffer with its JSON logs; opts gets the "mayfly" label.
-func newTestProvisioner(jit *fakeJIT, b *fakeBackend, opts Options) (*Provisioner, *syncBuffer) {
+func newTestProvisioner(jit *fakeJIT, b worker.Backend, opts Options) (*Provisioner, *syncBuffer) {
 	logs := &syncBuffer{}
 	opts.Labels = []string{"mayfly"}
 	p := New(jit, b, opts, slog.New(slog.NewJSONHandler(logs, nil)))
