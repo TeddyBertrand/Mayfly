@@ -169,26 +169,7 @@ func (p *Provisioner) handle(ctx context.Context, job workflow.Job) {
 		return
 	}
 
-	var name string
-	var cfg github.JITConfig
-	err := retry.Do(wctx, p.retry, func(ctx context.Context) error {
-		// A fresh name per attempt: if a lost response hid a successful registration, reusing the name gets a 409.
-		n, err := p.newName(job.ID)
-		if err != nil {
-			return err
-		}
-		jitCtx, jitCancel := context.WithTimeout(ctx, jitTimeout)
-		defer jitCancel()
-		c, err := p.jit.GenerateJITConfig(jitCtx, job.InstallationID, job.Repo, n, p.labels)
-		if err != nil {
-			return err
-		}
-		name, cfg = n, c
-		return nil
-	}, func(attempt int, wait time.Duration, err error) {
-		p.metrics.Retries.WithLabelValues(metrics.OpJITConfig).Inc()
-		log.Warn("jit config failed, retrying", logkey.Attempt, attempt, logkey.Wait, wait.String(), logkey.Err, err)
-	})
+	name, cfg, err := p.register(wctx, job.InstallationID, job.Repo, func() (string, error) { return p.newName(job.ID) }, log)
 	if err != nil {
 		if p.dropped(ctx, wctx) {
 			log.Info("job dropped while registering runner")
@@ -223,6 +204,32 @@ func (p *Provisioner) handle(ctx context.Context, job workflow.Job) {
 		return
 	}
 	log.Info("job done", logkey.Elapsed, time.Since(start).String())
+}
+
+// register registers a JIT runner on repo, named by newName, retrying temporary failures.
+// It returns the runner's name and its one-shot config.
+func (p *Provisioner) register(ctx context.Context, installationID int64, repo string, newName func() (string, error), log *slog.Logger) (string, github.JITConfig, error) {
+	var name string
+	var cfg github.JITConfig
+	err := retry.Do(ctx, p.retry, func(ctx context.Context) error {
+		// A fresh name per attempt: if a lost response hid a successful registration, reusing the name gets a 409.
+		n, err := newName()
+		if err != nil {
+			return err
+		}
+		jitCtx, jitCancel := context.WithTimeout(ctx, jitTimeout)
+		defer jitCancel()
+		c, err := p.jit.GenerateJITConfig(jitCtx, installationID, repo, n, p.labels)
+		if err != nil {
+			return err
+		}
+		name, cfg = n, c
+		return nil
+	}, func(attempt int, wait time.Duration, err error) {
+		p.metrics.Retries.WithLabelValues(metrics.OpJITConfig).Inc()
+		log.Warn("jit config failed, retrying", logkey.Attempt, attempt, logkey.Wait, wait.String(), logkey.Err, err)
+	})
+	return name, cfg, err
 }
 
 // dropped reports whether wctx was cancelled by a job update rather than by shutdown of ctx.
