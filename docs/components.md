@@ -62,6 +62,15 @@ queued ─► free warm runner for the repo? ─ yes ─► reserve it, refill i
 
 GitHub, not Mayfly, picks which idle runner gets a job, so the pool only counts: a queued job reserves one free runner, and `in_progress` on a warm runner, a cancellation or a 5-minute timeout ends the reservation. A warm runner taking a job that also has a cold worker waiting drops that worker. Warm runners have their own goroutines, outside `MAYFLY_WORKERS`.
 
+The pool is bounded ([decision 026](design-decisions.md)): it refills only while fewer than `MAYFLY_POOL_MAX` warm runners are alive for the repository, idle or busy, so the host runs at most `MAYFLY_WORKERS` cold workers plus `MAYFLY_POOL_MAX` warm runners per pooled repository. A runner idle for `MAYFLY_POOL_IDLE_TIMEOUT` is retired and replaced:
+
+```
+idle past timeout ─► delete registration on GitHub ─ ok (or 404) ─► stop container ─► refill to MAYFLY_POOL_SIZE
+                                                    └ fails ─────► keep it idle, retry next sweep
+```
+
+Deleting the registration first means GitHub cannot hand the runner a job while its container is being stopped; a runner that took a job in the meantime is left running.
+
 ## In one paragraph
 
 GitHub tells the receiver a job is waiting. The receiver checks it is authentic and not a duplicate, then asks the provisioner for a worker. The provisioner gets a one-job credential from GitHub and starts a throwaway container with it. If a container is left behind, the reaper kills it. Each worker lives for exactly one job, hence the name Mayfly.

@@ -302,3 +302,18 @@ Each entry records one decision, the options considered and the consequences. En
   - Warm runners run outside the `MAYFLY_WORKERS` goroutines, since an idle one holding a slot would starve cold jobs. The host can therefore run up to `MAYFLY_WORKERS` cold workers, plus the idle pool, plus warm runners busy with jobs; a cap on the total is settled in #29.
   - The worker timeout counts from container start, so a warm runner's idle time uses up its `MAYFLY_WORKER_TIMEOUT` until #29 adds an idle timeout.
   - Revisit if the pooled repositories grow past what the host can keep idle, or if the benchmark shows the runner's connection was not the main cost of boot.
+
+## 026. Warm pool sized by a fixed minimum and a total cap, idle runners rotated
+- **Date:** 2026-11-26
+- **Status:** accepted
+- **Context:** #29. The pool of decision 025 refills after every claim and does not count busy warm runners, so a burst of queued jobs on one repository starts about one warm container per job, with no upper bound, on a 4 GB host. Its idle runners also use up `MAYFLY_WORKER_TIMEOUT` and keep a live registration for as long as they wait. The brief asks for little wasted capacity and tracks cost per job.
+- **Options considered:**
+  - **A. Fixed minimum, total cap, idle runners rotated:** keep `min` runners idle per repository, refill after a claim only while fewer than `max` warm runners (idle and busy) are alive, and retire a runner idle past a timeout, replacing it only to stay at `min`. Smallest change to the pool's accounting; after a burst the pool falls straight back to `min`.
+  - **B. Minimum plus a demand-driven burst:** as A, but each pool miss raises the repository's idle target by one up to `max`, and runners above `min` that idle past the timeout are retired, so the target decays; `min` can be 0. Adapts to real use, at the cost of more state per repository and a less predictable pool.
+  - **C. One global cap for cold and warm workers:** tightest host protection, but couples both paths, needs a fairness rule between them and a rewrite of the cold path's fixed goroutines.
+- **Decision:** A. `MAYFLY_POOL_SIZE` stays the minimum (default 1), `MAYFLY_POOL_MAX` caps warm runners alive per repository (default twice the minimum, never below it), and `MAYFLY_POOL_IDLE_TIMEOUT` (default 30 minutes) retires idle runners. A job that finds the cap reached takes the cold path. A runner is retired by deleting its registration on GitHub first and stopping its container only once that succeeded, so GitHub cannot hand it a job while it is being stopped; a failed delete leaves the runner running.
+- **Consequences:**
+  - The host runs at most `MAYFLY_WORKERS` cold workers plus `MAYFLY_POOL_MAX` warm runners per pooled repository.
+  - Rotation bounds how long an idle registration lives and keeps idle time far below the worker timeout, at the cost of one registration and container start per idle slot per timeout.
+  - A burst larger than `max`, such as a wide matrix, still runs partly cold, and the pool keeps no memory of it. The retire path relies on GitHub refusing to delete a busy runner, to be confirmed against the real API.
+  - Revisit with option B if the #31 benchmark or the pool-miss metric (#30) shows repeated bursts above the minimum.
