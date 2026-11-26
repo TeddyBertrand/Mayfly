@@ -263,8 +263,11 @@ func TestQueuedJobReservesAndRefills(t *testing.T) {
 	p.Update(workflow.ActionInProgress, inProgress(testJob, first))
 	waitCounts(t, p, 1, 0, 0)
 	b.none(t)
-	if n, _ := histogram(t, p.metrics.BootSeconds); n != 1 {
-		t.Errorf("boot time observations = %d, want 1 for the warm job", n)
+	if claims, _ := histogram(t, p.metrics.PoolClaimSeconds); claims != 1 {
+		t.Errorf("claim observations = %d, want 1 for the warm job", claims)
+	}
+	if boots, _ := histogram(t, p.metrics.BootSeconds); boots != 0 {
+		t.Errorf("boot time observations = %d, want none for a warm job", boots)
 	}
 }
 

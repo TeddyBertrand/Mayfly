@@ -82,6 +82,9 @@ func New(jit JITIssuer, backend worker.Backend, opts Options, logger *slog.Logge
 		now:     time.Now,
 	}
 	p.pool = newPool(p, opts.Pool)
+	if p.pool != nil {
+		m.RegisterPool(p.pool.snapshot)
+	}
 	return p
 }
 
@@ -119,7 +122,7 @@ func (p *Provisioner) Update(action workflow.Action, job workflow.Job) {
 	p.observe(action, job)
 	if warm, reservedAt := p.pool.update(action, job); warm {
 		if !reservedAt.IsZero() {
-			p.metrics.BootSeconds.Observe(p.now().Sub(reservedAt).Seconds())
+			p.metrics.PoolClaimSeconds.Observe(p.now().Sub(reservedAt).Seconds())
 		}
 		// A cold worker started for this job before the pool could serve it would otherwise idle until its timeout.
 		if c, err := p.jobs.drop(job.ID); err == nil {
