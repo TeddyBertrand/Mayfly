@@ -280,7 +280,7 @@ Add pool size, claim latency and pool-miss metrics to the dashboard.
 
 ### [bench] Benchmark: image and warm pool
 Run the harness for each step on its own and combined, and add rows to the table.
-- [ ] Image alone measured against the baseline (boot-to-first-step and total time), with the image size recorded
+- [x] Image alone measured against the baseline (boot-to-first-step and total time), with the image size recorded
 - [ ] First step starts in under 10s (or the gap is explained)
 
 ### **done** [ci] Release v0.3.6 (#132)

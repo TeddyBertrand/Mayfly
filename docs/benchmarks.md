@@ -155,6 +155,51 @@ Boot adds about 4 s (queue 7 s against 3 s, first step 10 s against 5.5 s): the 
 
 This breakdown comes from one job per runner type in run A, so it shows where the time goes, not an exact split.
 
+## Pre-baked worker image of 2026-11-25 (Azure)
+
+The first M4 step, measured alone (decisions 022 to 024): the same workloads on the same host with the worker image of release 0.3.6, which has Go 1.27.4 and Node 24.22.3 in its tool cache.
+
+| | |
+|---|---|
+| Host | the baseline's: Azure `Standard_B2als_v2` (2 vCPU AMD, 4 GB), Denmark East, `MAYFLY_WORKERS=1` |
+| Mayfly | image `0.3.6` with `ghcr.io/teddybertrand/mayfly-worker:0.3.6`; the baseline ran `0.2.6` with the stock runner. Releases 0.3.0 and 0.3.5 changed no behaviour, so the image is the only change that matters here |
+| Harness | commit `182327c`, `hosted,mayfly`, 2 warm-up + 10 measured iterations per cell, same as the baseline |
+| Runs | two full runs one after the other: [a](../bench/results/2026-11-25-azure-image-a.md) ([CSV](../bench/results/2026-11-25-azure-image-a.csv)) and [b](../bench/results/2026-11-25-azure-image-b.md) ([CSV](../bench/results/2026-11-25-azure-image-b.csv)); 0 failed jobs out of 96 |
+
+Median total time of Mayfly, baseline against the image (run A / run B):
+
+| workflow | baseline | with the image | change |
+|---|---|---|---|
+| go-build | 85s / 85.5s | 49s / 49s | -42% / -43% |
+| npm-test | 31s / 32s | 17.5s / 17s | -44% / -47% |
+
+Against GitHub-hosted runners in the same runs, `go-build` on Mayfly is now about on par (49s against 47s and 48s, from 1.8x slower), and `npm-test` about 1.3x slower (17.5s and 17s against 13s, from 2.8x).
+
+**Startup did not move.** Queue time is 6-7s and the first step starts at 9-10s, as in the baseline. The image removes the toolchain download from the steps, but a container starts as fast as before. The brief's under-10s first step is the warm pool's target, not this image's.
+
+**One step explains the gain.** In a smoke job on this host `setup-go` took 1s, against 34s in the baseline; `setup-node` was 0s in a local run, against 15s. The compile, vet and test steps are unchanged.
+
+### Repeatability
+
+`bench compare` between a and b exits with status 0: all four cells are within ±10%. The Mayfly cells moved 0.0% (`go-build`) and 2.9% (`npm-test`), and `go-build` ran between 48s and 50s over 20 measured jobs.
+
+### CPU credits: no throttling
+
+Azure Monitor over the two runs (13:30 to 14:46 UTC): CPU Credits Remaining rose from 60.5 to 66.4, and average CPU stayed at 24-31%. The VM was not throttled.
+
+### What it costs
+
+| | stock runner | worker image |
+|---|---|---|
+| Image size on disk | 2.18 GB | 2.83 GB (+645 MB, +30%) |
+| First pull on the host | | about 1 minute (the first job queued 68s against the usual 7s) |
+
+The pull happens once per host, and the warm-up iterations of a benchmark never include it because it is paid by the first job. Every release also rebuilds and pushes the image (decision 023).
+
+### What this does not show
+
+Only Go and Node are baked in, and the workloads only use those two, so Rust, C and C++ jobs are not measured and are not faster yet. The remaining `npm-test` gap against hosted (about 4s) is slower install and test steps on 2 shared vCPUs, which caches and tmpfs address in M5. This is two runs on one host on one day.
+
 ## Running it
 
 The harness dispatches workflows, which needs a token with Actions write on the demo repo. Your `gh` login has it; the GitHub App deliberately does not (read only), so the harness never uses App credentials.
