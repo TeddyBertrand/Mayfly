@@ -274,9 +274,9 @@ Keep N idle workers registered and waiting, claim one per job, and refill in the
 Simple policy for pool size (fixed minimum plus burst) and idle timeout so the host is not wasting resources.
 - [x] Idle workers are retired after the timeout
 
-### [observability] Pool metrics
+### **done** [observability] Pool metrics (#30)
 Add pool size, claim latency and pool-miss metrics to the dashboard.
-- [ ] Panels added
+- [x] Panels added
 
 ### [bench] Benchmark: image and warm pool
 Run the harness for each step on its own and combined, and add rows to the table.

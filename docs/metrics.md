@@ -41,11 +41,13 @@ reaper:8082 ─┘                (not published)                            (SS
 GitHub:  created_at ─────────────────────── started_at ───────────────── completed_at
                    │◄──── mayfly_job_queue_seconds ───►│◄─ mayfly_job_duration_seconds ─►│
 mayfly:     queued event accepted ─────── in_progress event
-                   │◄─ mayfly_worker_boot_seconds ─►│
+   cold            │◄─ mayfly_worker_boot_seconds ─►│
+   warm            │◄─ mayfly_pool_claim_seconds ──►│
 ```
 
 - **Queue time** is what a developer feels: how long the job waited for a runner. It uses GitHub's timestamps, the same ones the benchmark harness reads through the API.
-- **Boot time** is the part of the queue time Mayfly controls: its own queue, the JIT registration, the container start and the runner connecting. It uses mayfly's clock, and ends when the `in_progress` webhook arrives, so it also holds that delivery delay and can come out slightly above queue time. In the first test run (10 jobs, 2 workers) mean boot time was 11.5 s against 11.4 s of queue time: nearly all of the wait was Mayfly's, not GitHub's. M4 (pre-baked image, warm pool) sets out to shrink boot time.
+- **Claim time** is the warm path's counterpart of boot time: from a job reserving a warm runner to the `in_progress` event of a warm runner. Nothing boots, so it holds GitHub's assignment and the webhook delivery (decision 027).
+- **Boot time**, for cold starts only, is the part of the queue time Mayfly controls: its own queue, the JIT registration, the container start and the runner connecting. It uses mayfly's clock, and ends when the `in_progress` webhook arrives, so it also holds that delivery delay and can come out slightly above queue time. In the first test run (10 jobs, 2 workers) mean boot time was 11.5 s against 11.4 s of queue time: nearly all of the wait was Mayfly's, not GitHub's. M4 (pre-baked image, warm pool) sets out to shrink boot time.
 - **Job duration** is the job itself, from GitHub's timestamps. M5 (caches, mirrors, tmpfs) sets out to shrink it.
 
 ## mayfly
@@ -53,7 +55,7 @@ mayfly:     queued event accepted ─────── in_progress event
 | Name | Type | Unit | Labels | Meaning |
 |---|---|---|---|---|
 | `mayfly_job_queue_seconds` | histogram | seconds | | Time a job waited for a runner, GitHub `created_at` to `started_at`. Recorded on `in_progress`. |
-| `mayfly_worker_boot_seconds` | histogram | seconds | | Time from mayfly accepting the `queued` event to the `in_progress` event of the runner it started. Only jobs this process tracks. |
+| `mayfly_worker_boot_seconds` | histogram | seconds | | Cold starts: time from mayfly accepting the `queued` event to the `in_progress` event of the runner it started. Only jobs this process tracks. |
 | `mayfly_job_duration_seconds` | histogram | seconds | | Time a job ran, GitHub `started_at` to `completed_at`. Recorded on `completed` when a runner took the job. |
 | `mayfly_jobs_total` | counter | jobs | `conclusion` | Completed jobs, by GitHub conclusion (`success`, `failure`, `cancelled`, ...). |
 | `mayfly_provision_failures_total` | counter | jobs | `stage` | Jobs mayfly gave up provisioning: `jit_config` (runner registration) or `worker` (container). Such a job stays queued on GitHub and the reaper reports it as stuck. |
@@ -64,6 +66,19 @@ mayfly:     queued event accepted ─────── in_progress event
 Histogram buckets: queue and boot time use 1, 2, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300 and 600 seconds; job duration uses 10 seconds up to 6 hours, GitHub's job limit.
 
 Events for jobs mayfly no longer tracks still count towards queue time, duration and `jobs_total`: a `completed` event often arrives after the worker exited and mayfly stopped tracking it. After a restart, jobs in flight have no boot time.
+
+## Warm pool
+
+These exist for the repositories in the pool's configuration. Without a pool, the gauges and `mayfly_pool_requests_total` have no series and the claim histogram stays at 0.
+
+| Name | Type | Unit | Labels | Meaning |
+|---|---|---|---|---|
+| `mayfly_pool_runners` | gauge | runners | `repo`, `state` | Warm runners by state: `pending` (being registered, or a slot held while it backs off after a failure), `idle`, `busy`, `retiring`. Read from the pool at each scrape. |
+| `mayfly_pool_max_runners` | gauge | runners | `repo` | Cap on the warm runners alive (`MAYFLY_POOL_MAX`). |
+| `mayfly_pool_requests_total` | counter | jobs | `repo`, `result` | Queued jobs of pooled repositories: `hit` (reserved a warm runner), `miss_empty` (none free, below the cap), `miss_max` (none free, at the cap), `miss_unresolved` (installation not known, yet or at all). A redelivered event for a job already reserved or tracked is not counted again. |
+| `mayfly_pool_claim_seconds` | histogram | seconds | | Time from a job reserving a warm runner to the `in_progress` event of a warm runner. Buckets from 0.25 to 60 s. |
+
+A hit is a reservation: GitHub chooses which runner gets the job, so another runner can still take it. A job that missed and was then taken by a warm runner has no claim time.
 
 ## reaper
 
@@ -90,6 +105,10 @@ Both processes also expose the standard Go runtime (`go_*`) and process (`proces
 | | Failure rate | `failure` + `timed_out` over completed jobs that were not `cancelled` or `skipped`; "no jobs" when there are none |
 | | Scrape targets up | `up` for mayfly and the reaper |
 | Waiting for a runner | Queue time, Boot time | p50, p95 and mean, over 5 minutes |
+| Warm pool | Pool runners | Runners by state, stacked, with the cap as a dashed line |
+| | Pool hit rate | Hits over all pool requests in the selected time range |
+| | Pool misses | Misses per minute, stacked by reason |
+| | Claim latency | p50, p95 and mean, over 5 minutes |
 | Running | Job duration | p50, p95 and mean, over 5 minutes |
 | | Jobs by conclusion | Completed jobs per minute, stacked by conclusion |
 | | Workers and queue | Workers alive and jobs waiting over time |
@@ -100,7 +119,7 @@ Both processes also expose the standard Go runtime (`go_*`) and process (`proces
 Reading it:
 
 - **Percentiles are estimates, the mean is exact.** `histogram_quantile` interpolates inside the bucket that holds the percentile, so with few jobs p50 and p95 jump between bucket edges (a 3 s job in the 0-10 s bucket of job duration reads as 5 s). The mean comes from `_sum / _count` and is exact. Benchmark numbers come from the GitHub API (#25), not from this dashboard.
-- **Labelled counters start at 0.** Mayfly creates every known label value (conclusions, stages, operations, reasons) at 0 on startup. Otherwise a series would first appear at 1, and `increase()`, which needs an earlier sample, would miss the first job of each kind.
+- **Labelled counters start at 0.** Mayfly creates every known label value (conclusions, stages, operations, reasons, and pool results per pooled repository) at 0 on startup. Otherwise a series would first appear at 1, and `increase()`, which needs an earlier sample, would miss the first job of each kind.
 - **Gaps are normal.** With no job in the last 5 minutes, the latency panels have nothing to compute and show a gap, not 0.
 
 ## Example queries
@@ -109,5 +128,7 @@ Reading it:
 |---|---|
 | Median queue time, last hour | `histogram_quantile(0.5, sum by (le) (rate(mayfly_job_queue_seconds_bucket[1h])))` |
 | p95 boot time | `histogram_quantile(0.95, sum by (le) (rate(mayfly_worker_boot_seconds_bucket[1h])))` |
+| Pool misses by reason, last day | `sum by (result) (increase(mayfly_pool_requests_total{result!="hit"}[1d]))` |
+| Median claim time, last hour | `histogram_quantile(0.5, sum by (le) (rate(mayfly_pool_claim_seconds_bucket[1h])))` |
 | Job failure rate | `sum(rate(mayfly_jobs_total{conclusion="failure"}[1h])) / sum(rate(mayfly_jobs_total[1h]))` |
 | Orphans removed per day | `sum by (reason) (increase(mayfly_reaper_workers_removed_total[1d]))` |
