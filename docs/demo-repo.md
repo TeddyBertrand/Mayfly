@@ -8,6 +8,8 @@ The benchmark target is [`TeddyBertrand/mayfly-demo`](https://github.com/TeddyBe
 |---|---|---|
 | `go-build` | Toolchain setup, `go mod download` (chi, uuid, testify), build, vet, test | hosted, mayfly, classic |
 | `npm-test` | Toolchain setup, `npm ci` (vitest, 67 packages), test | hosted, mayfly, classic |
+| `go-build-cached` | Same as `go-build`, with `setup-go` caching modules and build cache | hosted, mayfly, classic |
+| `npm-test-cached` | Same as `npm-test`, with `setup-node` caching the npm download cache | hosted, mayfly, classic |
 | `mayfly-smoke` | One echo step | mayfly |
 | `mayfly-long` | Sleeps 10 minutes, for reaper and shutdown tests | mayfly |
 
@@ -31,7 +33,7 @@ All runner types do exactly the same work:
 
 - **Same OS.** `ubuntu-24.04` on the hosted side; the worker image (`actions-runner`), which the classic runner also uses, is Ubuntu 24.04 too.
 - **Pinned toolchains.** Go `1.27.4` and Node `24.22.3`, so a new release between runs does not change the work.
-- **No caching.** `setup-go` has `cache: false` and `setup-node` gets no `cache` input, so every run downloads modules and packages. This is the unoptimized baseline; caching is an M4 optimization, measured separately. The classic runner is the one exception by nature: it keeps its tool cache (`_work/_tool`) between jobs, so `setup-go` and `setup-node` download only once. That persistent state is what it stands for in the comparison.
+- **No caching.** `setup-go` has `cache: false` and `setup-node` gets no `cache` input, so every run downloads modules and packages. This is the unoptimized baseline. Caching is measured with the `-cached` variants (M5, decision 028), which differ only by their cache inputs, so the baseline stays comparable: hosted runs use GitHub's cache, Mayfly runs the local cache server. The classic runner is the one exception by nature: it keeps its tool cache (`_work/_tool`) between jobs, so `setup-go` and `setup-node` download only once. That persistent state is what it stands for in the comparison.
 - **No cgo, no `-race`.** The worker image has no C compiler, so `CGO_ENABLED=0` on both sides.
 - **Private repo.** Hosted runners for private repositories have 2 vCPU and 7 GB, close to the 2 vCPU `Standard_B2als_v2` benchmark host. Public repositories get 4 vCPU, and a public repo would also let outside contributors aim workflows at the self-hosted runners.
 
