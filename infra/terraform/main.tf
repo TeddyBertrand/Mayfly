@@ -116,6 +116,7 @@ resource "azurerm_linux_virtual_machine" "host" {
     env = {
       COMPOSE_PROFILES         = var.cache_enabled ? "cloud,cache" : "cloud"
       MAYFLY_CACHE_URL         = var.cache_enabled ? "http://cache:3000/" : ""
+      MAYFLY_WORKER_TMPFS_SIZE = var.worker_tmpfs_size
       MAYFLY_VERSION           = var.mayfly_version
       MAYFLY_APP_ID            = var.app_id
       MAYFLY_RUNNER_LABELS     = var.runner_labels

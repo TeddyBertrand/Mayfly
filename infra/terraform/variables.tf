@@ -64,7 +64,7 @@ variable "app_id" {
 variable "mayfly_version" {
   description = "Release of ghcr.io/teddybertrand/mayfly to run; pinned so every rebuild runs the same code."
   type        = string
-  default     = "0.4.2"
+  default     = "0.4.3"
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.mayfly_version))
@@ -100,6 +100,17 @@ variable "cache_enabled" {
   description = "Run the local actions/cache server and point workers at it (decision 028); needs mayfly_version 0.4.1 or later."
   type        = bool
   default     = false
+}
+
+variable "worker_tmpfs_size" {
+  description = "Memory budget for each worker's tmpfs mounts (MAYFLY_WORKER_TMPFS_SIZE, decision 029), e.g. 1500m; empty keeps them on disk. Needs mayfly_version 0.4.3 or later."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^([1-9][0-9]*[kmgKMG]?)?$", var.worker_tmpfs_size))
+    error_message = "worker_tmpfs_size must be empty or a size such as 1500m or 2g."
+  }
 }
 
 variable "pool_repos" {
