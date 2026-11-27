@@ -352,6 +352,15 @@ With `cache_enabled = true`, a fresh host failed `compose up`: the `cache` servi
 - [ ] A fresh host with `cache_enabled = true` deploys with no manual step
 - [x] The network keeps the `mayfly-workers` bridge name, so the egress firewall still applies
 
+### [ci] Release v0.4.3 (#163)
+Publish v0.4.3 (decision 010) with worker scratch directories on tmpfs (#36, decision 029), so the M5 benchmark measures it on a released version. Adds `MAYFLY_WORKER_TMPFS_SIZE` and the Terraform `worker_tmpfs_size`, off by default. Moves the Terraform default `mayfly_version` to `0.4.3` to keep it aligned.
+- [ ] `VERSION` is `0.4.3` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.4.3` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.4.3` published for amd64 and arm64
+- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.4.3` published for amd64 and arm64, with the runner patch applied
+- [ ] `mayfly --version` in the image prints `0.4.3`
+- [ ] Terraform default `mayfly_version` is `0.4.3`
+
 ### **done** [ci] Release v0.4.2 (#158)
 Publish v0.4.2 (decision 010) with the deploy fix of #156: the deploy script creates the `mayfly-workers` network before `compose up`, so a fresh host with `cache_enabled = true` deploys without a manual step. Moves the Terraform default `mayfly_version` to `0.4.2` to keep it aligned.
 - [x] `VERSION` is `0.4.2` on `dev` and merged into `main`
