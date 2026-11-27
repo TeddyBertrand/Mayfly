@@ -56,14 +56,18 @@ func TestLoadProvisioner(t *testing.T) {
 				"MAYFLY_WORKER_TIMEOUT": "1h", "MAYFLY_WORKERS": "4", "MAYFLY_QUEUE_SIZE": "10",
 				"MAYFLY_POOL_REPOS": "octo/a, octo/b,Octo/A", "MAYFLY_POOL_SIZE": "3",
 				"MAYFLY_POOL_MAX": "3", "MAYFLY_POOL_IDLE_TIMEOUT": "10m",
+				"MAYFLY_CACHE_URL": "http://cache:3000",
 			}),
 			want: ProvisionerConfig{
 				App:    GitHubApp{ID: 5714458, Key: []byte("PEM-BYTES"), APIURL: "http://gh.local"},
 				Docker: Docker{Socket: "/tmp/d.sock"}, WorkerImage: "img:1", WorkerNetwork: "mayfly-workers",
 				WorkerTimeout: time.Hour, Workers: 4, QueueSize: 10,
 				PoolRepos: []string{"octo/a", "octo/b"}, PoolSize: 3, PoolMax: 3, PoolIdleTimeout: 10 * time.Minute,
+				CacheURL: "http://cache:3000/",
 			},
 		},
+		{name: "cache url without scheme", env: with(map[string]string{"MAYFLY_CACHE_URL": "cache:3000"}), wantErr: true},
+		{name: "cache url with query", env: with(map[string]string{"MAYFLY_CACHE_URL": "http://cache:3000/?a=1"}), wantErr: true},
 		{name: "pool max below size", env: with(map[string]string{"MAYFLY_POOL_SIZE": "3", "MAYFLY_POOL_MAX": "2"}), wantErr: true},
 		{name: "bad pool idle timeout", env: with(map[string]string{"MAYFLY_POOL_IDLE_TIMEOUT": "soon"}), wantErr: true},
 		{

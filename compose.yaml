@@ -44,6 +44,8 @@ services:
       MAYFLY_POOL_SIZE: ${MAYFLY_POOL_SIZE:-1}
       MAYFLY_POOL_MAX: ${MAYFLY_POOL_MAX:-}
       MAYFLY_POOL_IDLE_TIMEOUT: ${MAYFLY_POOL_IDLE_TIMEOUT:-30m}
+      # Set to http://cache:3000/ with the cache profile on; empty keeps GitHub's cache.
+      MAYFLY_CACHE_URL: ${MAYFLY_CACHE_URL:-}
     ports:
       - "${MAYFLY_PUBLISH:-127.0.0.1:8080}:8080"
     healthcheck:
@@ -92,6 +94,27 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # actions/cache backend for workers (decision 028); workers reach it as http://cache:3000/ on their network.
+  # It verifies each job's token and scopes entries per repo and branch. Never published.
+  cache:
+    profiles: [cache]
+    image: ghcr.io/falcondev-oss/github-actions-cache-server:10.0.2
+    restart: unless-stopped
+    environment:
+      API_BASE_URL: http://cache:3000
+      # Caps disk use on the 32 GB OS disk; least recently used entries go first.
+      CACHE_MAX_SIZE_BYTES: ${CACHE_MAX_SIZE_BYTES:-5368709120}
+    volumes:
+      - cache_data:/app/.data
+    networks: [workers]
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 512m
 
   # Dashboards from the repo; loopback only, reached on the VM through an SSH tunnel (decision 021).
   grafana:
@@ -177,6 +200,7 @@ volumes:
   prometheus_data:
   grafana_data:
   classic_runner:
+  cache_data:
 
 networks:
   # Created by mayfly on first use, or by scripts/classic-runner.sh; external so Compose never deletes it.

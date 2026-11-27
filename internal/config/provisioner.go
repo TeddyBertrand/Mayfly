@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,10 @@ const (
 	// repoSeparator splits MAYFLY_POOL_REPOS; ownerSeparator splits "owner/name".
 	repoSeparator  = ","
 	ownerSeparator = "/"
+	// schemeHTTP, schemeHTTPS and urlPathSeparator validate MAYFLY_CACHE_URL.
+	schemeHTTP       = "http"
+	schemeHTTPS      = "https"
+	urlPathSeparator = "/"
 )
 
 // ProvisionerConfig holds the settings of the provisioner component.
@@ -39,6 +44,8 @@ type ProvisionerConfig struct {
 	// PoolMax caps the warm runners alive per repository, idle and busy.
 	PoolMax         int
 	PoolIdleTimeout time.Duration
+	// CacheURL is the cache server workers send actions/cache traffic to (decision 028); empty keeps GitHub's.
+	CacheURL string
 }
 
 // LoadProvisioner reads the provisioner settings through getenv and readFile, applying defaults
@@ -82,7 +89,30 @@ func LoadProvisioner(getenv func(string) string, readFile func(string) ([]byte, 
 	if cfg.PoolIdleTimeout >= cfg.WorkerTimeout {
 		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_POOL_IDLE_TIMEOUT: must be shorter than MAYFLY_WORKER_TIMEOUT (%s), got %s", cfg.WorkerTimeout, cfg.PoolIdleTimeout)
 	}
+	if cfg.CacheURL, err = parseCacheURL(getenv("MAYFLY_CACHE_URL")); err != nil {
+		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_CACHE_URL: %w", err)
+	}
 	return cfg, nil
+}
+
+// parseCacheURL checks that v is an absolute http(s) URL with no query, and returns it with
+// a trailing slash. An empty v returns "".
+func parseCacheURL(v string) (string, error) {
+	if v == "" {
+		return "", nil
+	}
+	u, err := url.Parse(v)
+	if err != nil {
+		return "", err
+	}
+	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("must be an http(s) URL with a host and no query, got %q", v)
+	}
+	// actions/cache joins paths onto it, and the cache server requires the trailing slash.
+	if !strings.HasSuffix(v, urlPathSeparator) {
+		v += urlPathSeparator
+	}
+	return v, nil
 }
 
 // parseRepos splits a comma-separated list of "owner/name" repositories, dropping duplicates.

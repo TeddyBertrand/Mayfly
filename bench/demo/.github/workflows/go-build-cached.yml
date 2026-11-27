@@ -1,0 +1,37 @@
+name: go-build-cached
+run-name: go-build-cached on ${{ inputs.runner }}
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner type to run on
+        type: choice
+        options: [hosted, mayfly, classic]
+        default: hosted
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # The one switch between runner types; everything below is identical on all of them.
+    runs-on: ${{ fromJSON('{"hosted":"ubuntu-24.04","mayfly":["self-hosted","mayfly"],"classic":["self-hosted","classic"]}')[inputs.runner] }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: go
+    env:
+      # The worker image has no C compiler; disabling cgo on both sides keeps the work the same.
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.4"
+          # Same work as go-build, with the module and build cache restored and saved through actions/cache.
+          cache: true
+          cache-dependency-path: go/go.sum
+      - run: go mod download
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -count=1 ./...
