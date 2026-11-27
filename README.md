@@ -46,4 +46,13 @@ Baseline of 2026-11-25, unoptimized Mayfly 0.2.6 on an Azure `Standard_B2als_v2`
 
 All numbers are from run A of each setup, on the same host size and harness settings. The hosted and plain Mayfly columns are the baseline above. The worker image bakes in Go and Node (release 0.3.6, [details](docs/benchmarks.md#pre-baked-worker-image-of-2026-11-25-azure)). The warm pool is release 0.3.9 ([details](docs/benchmarks.md#warm-pool-of-2026-11-26-azure-alone-and-with-the-worker-image)): it halves the time to a job's first step, from about 10s to 5s. In the same runs as "with both", hosted runners took 48s and 13s, so Mayfly is on par with them on these two workflows, run one job at a time.
 
+With caching (M5, 2026-11-27, [details](docs/benchmarks.md#local-cache-server-of-2026-11-27-azure)), on the cached variants of the same workflows:
+
+| workflow | GitHub-hosted | Mayfly, GitHub cache | with the local cache | with the local cache and warm pool |
+|---|---|---|---|---|
+| go-build-cached | 17s | 20s | 18s | 13s |
+| npm-test-cached | 13.5s | 19s | 17s | 12s |
+
+The local cache server ships in release 0.4.1. With it and the warm pool, Mayfly finished both workflows faster than hosted runners, and its times varied by 1s against 15s on hosted.
+
 **Status:** M1 core loop works: a `workflow_job` webhook starts a one-job Docker runner that is removed afterwards.

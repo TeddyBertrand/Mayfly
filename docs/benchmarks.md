@@ -278,6 +278,55 @@ Nothing points to throttling: the balance stayed high where it was read, and eac
 - **Readiness.** The pool counts a runner as idle once it is registered, before its container is running and connected. A job could then reserve a runner that is still pulling its image. These runs waited for the runner to be online before starting.
 - Two small workflows, one host size, one day.
 
+## Local cache server of 2026-11-27 (Azure)
+
+The first M5 step (#32, decision 028): `actions/cache` traffic from workers goes to a cache server on the host instead of GitHub's cache service. Measured on the cached variants of the two workloads, `go-build-cached` and `npm-test-cached`, which differ from the originals only by their cache inputs ([demo-repo.md](demo-repo.md)).
+
+| | |
+|---|---|
+| Host | the baseline's: Azure `Standard_B2als_v2` (2 vCPU AMD, 4 GB), Denmark East, `MAYFLY_WORKERS=1` |
+| GitHub cache | release `0.4.0`, no cache server: workers cache to GitHub's service, as hosted runners do. `hosted,mayfly` |
+| Local cache | release `0.4.1` with `cache_enabled = true`; changing it replaced the VM. `mayfly` only |
+| Local cache and pool | release `0.4.1`, cache and warm pool on the demo repo (`MAYFLY_POOL_SIZE=1`); replaced the VM again. `mayfly` only |
+| Harness | 2 warm-up + 10 measured iterations per cell, as before. The warm-ups fill the cache, so measured runs are cache hits |
+| Runs | one run per setup: [GitHub cache](../bench/results/2026-11-27-azure-cache-github.md) ([CSV](../bench/results/2026-11-27-azure-cache-github.csv)), [local cache](../bench/results/2026-11-27-azure-cache-local.md) ([CSV](../bench/results/2026-11-27-azure-cache-local.csv)), [local cache and pool](../bench/results/2026-11-27-azure-cache-pool.md) ([CSV](../bench/results/2026-11-27-azure-cache-pool.csv)). 0 failed jobs out of 96 |
+
+Hosted runners do not use Mayfly, so they were measured once, in the first setup, and serve as the reference for all three.
+
+### Cache hit on the local server
+
+Before the second setup's run, `go-build-cached` ran twice on Mayfly. The first job missed although GitHub's cache already held the same key from the first setup, so it never asked GitHub, and it saved a 29 MB entry into the cache server's volume. The second logged `Cache hit for: setup-go-…` and `Cache restored successfully`.
+
+### Results
+
+Medians, with the range of total time. Work is total minus first step: the time the job's steps take once it runs.
+
+| | Hosted | Mayfly, GitHub cache | Mayfly, local cache | Mayfly, local cache and pool |
+|---|---|---|---|---|
+| Queue | 2.5-3s | 6.5-7s | 6-7s | **2s** |
+| First step | 4-5.5s | 9.5-10s | 9-10s | **5s** |
+| go-build-cached work | 12.5s | 10s | **8s** | **8s** |
+| npm-test-cached work | 9s | 10s | **8s** | **7s** |
+| go-build-cached total | 17s (10-26s) | 20s (19-25s) | 18s (17-19s) | **13s (13-14s)** |
+| npm-test-cached total | 13.5s (10-25s) | 19s (19-21s) | 17s (16-18s) | **12s (12-13s)** |
+
+- **Caching is the large step.** The uncached `go-build` took 49s with the worker image alone (2026-11-25); cached, it takes 18-20s, since modules and build outputs are restored instead of downloaded and compiled.
+- **The local server saves about 2s per job** over GitHub's cache on both workflows, all of it in the work: the restore stays on the host.
+- **With the pool, Mayfly is ahead of hosted runners in these runs:** 13s against 17s on `go-build-cached` (24% less) and 12s against 13.5s on `npm-test-cached` (11% less). Startup is level (5s against 4-5.5s), and the work is faster and much steadier: Mayfly's totals span 1s, hosted ones 15s.
+- **Against the brief's 30-50% target**, the medians fall short (11-24%). Against hosted p90 (24s and 19s), Mayfly is 42% and 32% faster. The registry mirror, package proxy and tmpfs steps of M5 are still to come.
+
+### Deploy bug found
+
+On both fresh hosts with `cache_enabled = true`, `compose up` failed: the `cache` service joins the external `mayfly-workers` network, which only mayfly created, at the first job. It was worked around on the host by creating the network with its bridge name and restarting `mayfly.service`, then fixed in the deploy script (#156) and released as 0.4.2.
+
+### What this does not show
+
+- **Repeatability.** Each setup ran once, so `bench compare` was not run. The Mayfly cells had narrow ranges (1-6s), but a second run would be needed to claim the ±10% of earlier sections.
+- **CPU credits.** Azure Monitor was not read for these runs.
+- **A cold cache.** Measured runs are all hits on a cache filled by the warm-ups. A first run after a lockfile change pays the full download plus the save.
+- **Isolation.** The server checks each job's token and scopes entries per repository and branch; that is the subject of #33 and was not tested here.
+- Two small workflows, one host size, one day.
+
 ## Running it
 
 The harness dispatches workflows, which needs a token with Actions write on the demo repo. Your `gh` login has it; the GitHub App deliberately does not (read only), so the harness never uses App credentials.
