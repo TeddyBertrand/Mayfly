@@ -114,6 +114,8 @@ resource "azurerm_linux_virtual_machine" "host" {
     key_vault_uri = data.azurerm_key_vault.secrets.vault_uri
     domain        = azurerm_public_ip.host.fqdn
     env = {
+      COMPOSE_PROFILES         = var.cache_enabled ? "cloud,cache" : "cloud"
+      MAYFLY_CACHE_URL         = var.cache_enabled ? "http://cache:3000/" : ""
       MAYFLY_VERSION           = var.mayfly_version
       MAYFLY_APP_ID            = var.app_id
       MAYFLY_RUNNER_LABELS     = var.runner_labels
