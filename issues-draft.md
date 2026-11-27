@@ -323,9 +323,9 @@ Publish v0.4.0 (decision 010) so `main` ships the end of M4: the pre-baked worke
 
 ## M5 - Optimization: caching and disk
 
-### [infra] Local cache server for `actions/cache`
+### **done** [infra] Local cache server for `actions/cache` (#32)
 Deploy a cache backend reachable only from workers. Account for the cache protocol version used by the current runner.
-- [ ] Cache hit demonstrated on the demo repo
+- [x] Cache hit demonstrated on the demo repo
 
 ### [security] Cache isolation per repo and branch
 Scope cache keys by repo and branch (with a restricted fallback to the default branch) to prevent poisoning between repos or from PR branches.
@@ -352,23 +352,23 @@ With `cache_enabled = true`, a fresh host failed `compose up`: the `cache` servi
 - [ ] A fresh host with `cache_enabled = true` deploys with no manual step
 - [x] The network keeps the `mayfly-workers` bridge name, so the egress firewall still applies
 
-### [ci] Release v0.4.2 (#158)
+### **done** [ci] Release v0.4.2 (#158)
 Publish v0.4.2 (decision 010) with the deploy fix of #156: the deploy script creates the `mayfly-workers` network before `compose up`, so a fresh host with `cache_enabled = true` deploys without a manual step. Moves the Terraform default `mayfly_version` to `0.4.2` to keep it aligned.
-- [ ] `VERSION` is `0.4.2` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.4.2` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.4.2` published for amd64 and arm64
-- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.4.2` published for amd64 and arm64, with the runner patch applied
-- [ ] `mayfly --version` in the image prints `0.4.2`
-- [ ] Terraform default `mayfly_version` is `0.4.2`
+- [x] `VERSION` is `0.4.2` on `dev` and merged into `main`
+- [x] GitHub Release `v0.4.2` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.4.2` published for amd64 and arm64
+- [x] `ghcr.io/teddybertrand/mayfly-worker:0.4.2` published for amd64 and arm64, with the runner patch applied
+- [x] `mayfly --version` in the image prints `0.4.2`
+- [x] Terraform default `mayfly_version` is `0.4.2`
 
-### [ci] Release v0.4.1 (#153)
+### **done** [ci] Release v0.4.1 (#153)
 Publish v0.4.1 (decision 010) so the local cache server for `actions/cache` (#32, decision 028) ships as a release, and the M5 benchmark compares two released versions: 0.4.0 caching on GitHub's cloud against 0.4.1 caching locally. Adds `MAYFLY_CACHE_URL`, the runner patch in the worker image, the `cache` Compose profile and the Terraform `cache_enabled` switch, all off by default. Moves the Terraform default `mayfly_version` to `0.4.1` to keep it aligned.
-- [ ] `VERSION` is `0.4.1` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.4.1` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.4.1` published for amd64 and arm64
-- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.4.1` published for amd64 and arm64, with the runner patch applied
-- [ ] `mayfly --version` in the image prints `0.4.1`
-- [ ] Terraform default `mayfly_version` is `0.4.1`
+- [x] `VERSION` is `0.4.1` on `dev` and merged into `main`
+- [x] GitHub Release `v0.4.1` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.4.1` published for amd64 and arm64
+- [x] `ghcr.io/teddybertrand/mayfly-worker:0.4.1` published for amd64 and arm64, with the runner patch applied
+- [x] `mayfly --version` in the image prints `0.4.1`
+- [x] Terraform default `mayfly_version` is `0.4.1`
 
 ## M6 - Hardening, docs and demo
 
