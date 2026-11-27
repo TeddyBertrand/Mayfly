@@ -96,6 +96,12 @@ variable "worker_image" {
   }
 }
 
+variable "cache_enabled" {
+  description = "Run the local actions/cache server and point workers at it (decision 028); needs mayfly_version 0.4.1 or later."
+  type        = bool
+  default     = false
+}
+
 variable "pool_repos" {
   description = "Comma-separated owner/name repositories that keep warm runners (MAYFLY_POOL_REPOS); empty disables the pool."
   type        = string

@@ -7,6 +7,9 @@ app_id           = "123456"
 # Benchmark days: a 4 GB size, then back to the free default.
 # vm_size = "Standard_B2als_v2"
 
+# Local actions/cache server (off by default, decision 028).
+# cache_enabled = true
+
 # Warm pool (off by default). Each warm runner is a container that stays up on the host.
 # pool_repos = "owner/name"
 # pool_size  = 1

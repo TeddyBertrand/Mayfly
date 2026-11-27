@@ -333,3 +333,20 @@ Each entry records one decision, the options considered and the consequences. En
   - A hit is a reservation, not proof that a warm runner ran the job: GitHub chooses the runner, and a reservation can expire.
   - A job that missed and was then taken by a warm runner has no claim time, since nothing recorded when it started waiting for one.
   - `miss_max` points at the cap (`MAYFLY_POOL_MAX`). `miss_empty` points at refills slower than the arrival of jobs, which a higher `MAYFLY_POOL_SIZE` would absorb.
+
+## 028. Existing cache server for `actions/cache`, with a patched runner
+- **Date:** 2026-11-27
+- **Status:** accepted
+- **Context:** #32. `actions/cache` v4 speaks the v2 cache protocol (Twirp over HTTP) and finds its server through `ACTIONS_RESULTS_URL`. The runner sets that variable from the job message and overwrites any value set on the worker, so no option works through configuration alone. The brief wants workflows to run unchanged and caches isolated per repo and branch (#33).
+- **Options considered:**
+  - **A. An existing self-hosted server (falcondev `github-actions-cache-server`) and a runner patch in the worker image:** mature, speaks v1 and v2, workflows unchanged, little code to own. Adds a non-Go service, depends on a binary patch of the runner, and its isolation model must be checked for #33.
+  - **B. A minimal v2 server written in Go inside Mayfly, with the same patch:** full ownership and isolation built in, but the most work, on a protocol GitHub does not document.
+  - **C. A drop-in replacement action backed by S3 or MinIO:** no patch, but users must edit their workflows, and the caching built into `setup-*` actions still goes to GitHub.
+  - **D. A shared cache volume mounted on the workers:** simplest and fastest, but does not serve `actions/cache`, and a shared writable volume lets any job poison the cache for all others.
+- **Decision:** A, for its maturity. The runner patch lives in the worker image, pinned to the runner version the image ships.
+- **Consequences:**
+  - Workflows keep using `actions/cache` and `setup-*` caching unchanged.
+  - Each runner upgrade must re-check the patch. The image build fails if the patch no longer applies, instead of silently caching on GitHub.
+  - A new service joins the compose stack, with its storage on the host disk.
+  - #33 depends on what the server can scope by. If it cannot isolate by repo and branch, wrap it or revisit B.
+  - B stays an option for a later Mayfly version if the server limits isolation or the protocol changes faster than it follows.

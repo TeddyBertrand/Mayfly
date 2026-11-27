@@ -57,9 +57,10 @@ write_files:
       } >"$DIR/.env"
 
       cd "$DIR"
+      # Profiles come from COMPOSE_PROFILES in .env (cloud, plus cache when enabled).
       # Pull first: compose.yaml also has a build section, and the host has no source to build from.
-      docker compose --profile cloud pull --quiet
-      docker compose --profile cloud up -d --no-build
+      docker compose pull --quiet
+      docker compose up -d --no-build
   - path: /etc/systemd/system/mayfly.service
     content: |
       [Unit]
@@ -72,7 +73,7 @@ write_files:
       Type=oneshot
       RemainAfterExit=yes
       ExecStart=/usr/local/sbin/mayfly-deploy
-      ExecStop=/usr/bin/docker compose --project-directory /opt/mayfly --profile cloud down
+      ExecStop=/usr/bin/docker compose --project-directory /opt/mayfly down
       TimeoutStartSec=15min
       TimeoutStopSec=2min
 

@@ -42,3 +42,13 @@ LABEL io.mayfly.worker.runner-version=${RUNNER_VERSION} \
 	io.mayfly.worker.node-version=${NODE_VERSION}
 COPY --from=toolchains --chown=runner:runner ${TOOL_CACHE} ${TOOL_CACHE}
 ENV RUNNER_TOOL_CACHE=${TOOL_CACHE} AGENT_TOOLSDIRECTORY=${TOOL_CACHE}
+# Rename the variable the runner overwrites (UTF-16LE, same length), so ACTIONS_RESULTS_URL set by Mayfly
+# survives and actions/cache reaches the local cache server (decision 028). Fails the build if the patch no longer applies.
+RUN set -eu; \
+	dll=/home/runner/bin/Runner.Worker.dll; \
+	from='A\x00C\x00T\x00I\x00O\x00N\x00S\x00_\x00R\x00E\x00S\x00U\x00L\x00T\x00S\x00_\x00U\x00R\x00L\x00'; \
+	to='A\x00C\x00T\x00I\x00O\x00N\x00S\x00_\x00R\x00E\x00S\x00U\x00L\x00T\x00S\x00_\x00O\x00R\x00L\x00'; \
+	test "$(grep -c -a -P "$from" "$dll")" = 1; \
+	sed -i "s/$from/$to/g" "$dll"; \
+	! grep -q -a -P "$from" "$dll"; \
+	grep -q -a -P "$to" "$dll"
