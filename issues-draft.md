@@ -347,6 +347,15 @@ Mount `_work`, the Go build cache and `/tmp` on tmpfs, with a memory limit.
 Update the table and compare against the 30-50% target versus hosted runners.
 - [ ] Final numbers for each optimization step
 
+### [ci] Release v0.4.1 (#153)
+Publish v0.4.1 (decision 010) so the local cache server for `actions/cache` (#32, decision 028) ships as a release, and the M5 benchmark compares two released versions: 0.4.0 caching on GitHub's cloud against 0.4.1 caching locally. Adds `MAYFLY_CACHE_URL`, the runner patch in the worker image, the `cache` Compose profile and the Terraform `cache_enabled` switch, all off by default. Moves the Terraform default `mayfly_version` to `0.4.1` to keep it aligned.
+- [ ] `VERSION` is `0.4.1` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.4.1` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.4.1` published for amd64 and arm64
+- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.4.1` published for amd64 and arm64, with the runner patch applied
+- [ ] `mayfly --version` in the image prints `0.4.1`
+- [ ] Terraform default `mayfly_version` is `0.4.1`
+
 ## M6 - Hardening, docs and demo
 
 ### [security] Threat model document
