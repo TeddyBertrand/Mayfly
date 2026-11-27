@@ -352,6 +352,15 @@ With `cache_enabled = true`, a fresh host failed `compose up`: the `cache` servi
 - [ ] A fresh host with `cache_enabled = true` deploys with no manual step
 - [x] The network keeps the `mayfly-workers` bridge name, so the egress firewall still applies
 
+### [ci] Release v0.4.2 (#158)
+Publish v0.4.2 (decision 010) with the deploy fix of #156: the deploy script creates the `mayfly-workers` network before `compose up`, so a fresh host with `cache_enabled = true` deploys without a manual step. Moves the Terraform default `mayfly_version` to `0.4.2` to keep it aligned.
+- [ ] `VERSION` is `0.4.2` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.4.2` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.4.2` published for amd64 and arm64
+- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.4.2` published for amd64 and arm64, with the runner patch applied
+- [ ] `mayfly --version` in the image prints `0.4.2`
+- [ ] Terraform default `mayfly_version` is `0.4.2`
+
 ### [ci] Release v0.4.1 (#153)
 Publish v0.4.1 (decision 010) so the local cache server for `actions/cache` (#32, decision 028) ships as a release, and the M5 benchmark compares two released versions: 0.4.0 caching on GitHub's cloud against 0.4.1 caching locally. Adds `MAYFLY_CACHE_URL`, the runner patch in the worker image, the `cache` Compose profile and the Terraform `cache_enabled` switch, all off by default. Moves the Terraform default `mayfly_version` to `0.4.1` to keep it aligned.
 - [ ] `VERSION` is `0.4.1` on `dev` and merged into `main`
