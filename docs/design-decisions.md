@@ -350,3 +350,19 @@ Each entry records one decision, the options considered and the consequences. En
   - A new service joins the compose stack, with its storage on the host disk.
   - #33 depends on what the server can scope by. If it cannot isolate by repo and branch, wrap it or revisit B.
   - B stays an option for a later Mayfly version if the server limits isolation or the protocol changes faster than it follows.
+
+## 029. Worker scratch directories on tmpfs, under one memory budget
+- **Date:** 2026-11-27
+- **Status:** accepted
+- **Context:** #36. A worker lives for one job, so nothing it writes needs to reach the disk, yet the checkout, `node_modules`, build outputs and restored caches all go through overlayfs to the VM's small managed disk. The host has 4 GB of RAM, about 1.3 GB of it already used by the other services, and tmpfs pages count as memory.
+- **Options considered:**
+  - **Directories, A. `_work` and `/tmp` only:** what the issue names, the smallest memory cost, but the Go and npm caches that `actions/cache` restores into stay on disk.
+  - **Directories, B. A plus `~/.cache/go-build`, `~/go/pkg/mod` and `~/.npm`:** covers where the cache restore, the compile and `npm ci` write, so the larger expected gain, at more memory per job.
+  - **Size, A. One budget split across the mounts:** a job can never hold more than the budget in tmpfs, whatever directory fills up.
+  - **Size, B. One limit per mount:** simpler to reason about per directory, but the sum can exceed what the host can spare.
+- **Decision:** B for the directories, for the larger expected gain, and A for the size. Off unless a budget is configured (`MAYFLY_WORKER_TMPFS_SIZE`). The caches are mounted at `/mayfly/go-build`, `/mayfly/go-mod` and `/mayfly/npm`, with `GOCACHE`, `GOMODCACHE` and `npm_config_cache` pointing at them: mounting under `$HOME` would make Docker create root-owned parents such as `~/.cache` and `~/go` that the runner could no longer write to. `_work` gets two shares of the budget and each other mount one. `/opt/hostedtoolcache` is never mounted over, since a mount hides the toolchains baked into the image (decision 022).
+- **Consequences:**
+  - Disk I/O leaves the job's hot path; the gain must be measured, since the page cache already absorbs many writes.
+  - Each job can hold up to the budget in RAM. A job that fills a mount fails with "no space left on device" instead of pushing the host out of memory.
+  - Splitting the budget caps each directory at its share, so one directory can fill up while others are empty. Revisit the split if a workload hits it.
+  - Idle warm runners cost nothing extra, since an empty tmpfs uses no memory.

@@ -46,6 +46,8 @@ services:
       MAYFLY_POOL_IDLE_TIMEOUT: ${MAYFLY_POOL_IDLE_TIMEOUT:-30m}
       # Set to http://cache:3000/ with the cache profile on; empty keeps GitHub's cache.
       MAYFLY_CACHE_URL: ${MAYFLY_CACHE_URL:-}
+      # Memory budget for each worker's tmpfs mounts (decision 029), e.g. 1500m; empty keeps them on disk.
+      MAYFLY_WORKER_TMPFS_SIZE: ${MAYFLY_WORKER_TMPFS_SIZE:-}
     ports:
       - "${MAYFLY_PUBLISH:-127.0.0.1:8080}:8080"
     healthcheck:
