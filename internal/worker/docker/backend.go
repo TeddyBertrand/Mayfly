@@ -45,6 +45,7 @@ type Backend struct {
 	image    string
 	network  string
 	cacheURL string
+	tmpfs    int64
 	cmd      []string
 	timeout  time.Duration
 	logger   *slog.Logger
@@ -65,6 +66,8 @@ type Options struct {
 	Network string
 	// CacheURL is the cache server workers use for actions/cache; empty keeps GitHub's.
 	CacheURL string
+	// TmpfsBytes is the memory budget of the worker's tmpfs mounts; 0 keeps them on disk.
+	TmpfsBytes int64
 	// Timeout is how long a worker may run before it is killed.
 	Timeout time.Duration
 	// Owner is the instance ID of this process, set on every container so the reaper can spot orphans.
@@ -80,7 +83,7 @@ func New(opts Options, logger *slog.Logger) *Backend {
 		m = metrics.NewMayfly(nil)
 	}
 	return &Backend{
-		eng: newSocketEngine(opts.Socket), image: opts.Image, network: opts.Network, cacheURL: opts.CacheURL, cmd: []string{runnerCommand},
+		eng: newSocketEngine(opts.Socket), image: opts.Image, network: opts.Network, cacheURL: opts.CacheURL, tmpfs: opts.TmpfsBytes, cmd: []string{runnerCommand},
 		timeout: opts.Timeout, logger: logger, retry: retry.Default, owner: opts.Owner,
 		retries: m.Retries.WithLabelValues(metrics.OpWorkerStart),
 	}
@@ -149,6 +152,9 @@ func (b *Backend) containerSpec(spec worker.Spec) containerSpec {
 	if b.cacheURL != "" {
 		cs.Env = append(cs.Env, envResultsURL+"="+b.cacheURL)
 	}
+	var tmpfsEnv []string
+	cs.HostConfig.Tmpfs, tmpfsEnv = tmpfsSpec(b.tmpfs)
+	cs.Env = append(cs.Env, tmpfsEnv...)
 	cs.HostConfig.AutoRemove = true
 	cs.HostConfig.NetworkMode = b.network
 	return cs

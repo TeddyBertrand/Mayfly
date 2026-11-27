@@ -102,6 +102,17 @@ variable "cache_enabled" {
   default     = false
 }
 
+variable "worker_tmpfs_size" {
+  description = "Memory budget for each worker's tmpfs mounts (MAYFLY_WORKER_TMPFS_SIZE, decision 029), e.g. 1500m; empty keeps them on disk. Needs mayfly_version 0.4.3 or later."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^([1-9][0-9]*[kmgKMG]?)?$", var.worker_tmpfs_size))
+    error_message = "worker_tmpfs_size must be empty or a size such as 1500m or 2g."
+  }
+}
+
 variable "pool_repos" {
   description = "Comma-separated owner/name repositories that keep warm runners (MAYFLY_POOL_REPOS); empty disables the pool."
   type        = string

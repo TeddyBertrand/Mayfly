@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -29,6 +30,9 @@ const (
 	urlPathSeparator = "/"
 )
 
+// byteUnits are the size suffixes MAYFLY_WORKER_TMPFS_SIZE accepts.
+var byteUnits = map[byte]int64{'k': 1 << 10, 'm': 1 << 20, 'g': 1 << 30}
+
 // ProvisionerConfig holds the settings of the provisioner component.
 type ProvisionerConfig struct {
 	App           GitHubApp
@@ -46,6 +50,8 @@ type ProvisionerConfig struct {
 	PoolIdleTimeout time.Duration
 	// CacheURL is the cache server workers send actions/cache traffic to (decision 028); empty keeps GitHub's.
 	CacheURL string
+	// TmpfsBytes is the memory budget for the workers' tmpfs mounts (decision 029); 0 keeps them on disk.
+	TmpfsBytes int64
 }
 
 // LoadProvisioner reads the provisioner settings through getenv and readFile, applying defaults
@@ -92,7 +98,27 @@ func LoadProvisioner(getenv func(string) string, readFile func(string) ([]byte, 
 	if cfg.CacheURL, err = parseCacheURL(getenv("MAYFLY_CACHE_URL")); err != nil {
 		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_CACHE_URL: %w", err)
 	}
+	if cfg.TmpfsBytes, err = parseByteSize(getenv("MAYFLY_WORKER_TMPFS_SIZE")); err != nil {
+		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_WORKER_TMPFS_SIZE: %w", err)
+	}
 	return cfg, nil
+}
+
+// parseByteSize reads a positive size such as 1500m or 2g, with binary units (k, m, g) as Docker uses.
+// An empty v returns 0.
+func parseByteSize(v string) (int64, error) {
+	if v == "" {
+		return 0, nil
+	}
+	num, mult := strings.ToLower(v), int64(1)
+	if unit, ok := byteUnits[num[len(num)-1]]; ok {
+		num, mult = num[:len(num)-1], unit
+	}
+	n, err := strconv.ParseInt(num, 10, 64)
+	if err != nil || n <= 0 || n > math.MaxInt64/mult {
+		return 0, fmt.Errorf("must be a positive size such as 1500m or 2g, got %q", v)
+	}
+	return n * mult, nil
 }
 
 // parseCacheURL checks that v is an absolute http(s) URL with no query, and returns it with

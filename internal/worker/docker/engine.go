@@ -89,8 +89,9 @@ type containerSpec struct {
 	Env        []string          `json:"Env"`
 	Labels     map[string]string `json:"Labels"`
 	HostConfig struct {
-		AutoRemove  bool   `json:"AutoRemove"`
-		NetworkMode string `json:"NetworkMode,omitempty"`
+		AutoRemove  bool              `json:"AutoRemove"`
+		NetworkMode string            `json:"NetworkMode,omitempty"`
+		Tmpfs       map[string]string `json:"Tmpfs,omitempty"`
 	} `json:"HostConfig"`
 }
 
