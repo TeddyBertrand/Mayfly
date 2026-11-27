@@ -303,6 +303,12 @@ func TestContainerSpec(t *testing.T) {
 	if got := b.containerSpec(testSpec).HostConfig.NetworkMode; got != "mayfly-workers" {
 		t.Errorf("NetworkMode = %q, want mayfly-workers", got)
 	}
+
+	b.cacheURL = "http://cache:3000/"
+	wantEnv := []string{"ACTIONS_RUNNER_INPUT_JITCONFIG=" + fakeJIT, "ACTIONS_RESULTS_URL=http://cache:3000/"}
+	if got := b.containerSpec(testSpec).Env; !reflect.DeepEqual(got, wantEnv) {
+		t.Errorf("env = %v, want %v", got, wantEnv)
+	}
 }
 
 // TestWorkerNetwork checks that a configured network is created once when missing, with a named bridge.

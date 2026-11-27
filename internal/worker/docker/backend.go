@@ -21,6 +21,8 @@ const (
 	runnerCommand = "./run.sh"
 	// envJITConfig is the variable the runner reads its JIT config from, which keeps it out of the process list.
 	envJITConfig = "ACTIONS_RUNNER_INPUT_JITCONFIG"
+	// envResultsURL points actions/cache at the cache server; only the patched runner keeps it (decision 028).
+	envResultsURL = "ACTIONS_RESULTS_URL"
 )
 
 const (
@@ -39,15 +41,16 @@ const (
 
 // Backend runs each worker as a Docker container that is removed when its job ends.
 type Backend struct {
-	eng     *engine
-	image   string
-	network string
-	cmd     []string
-	timeout time.Duration
-	logger  *slog.Logger
-	retry   retry.Policy
-	owner   string
-	retries prometheus.Counter
+	eng      *engine
+	image    string
+	network  string
+	cacheURL string
+	cmd      []string
+	timeout  time.Duration
+	logger   *slog.Logger
+	retry    retry.Policy
+	owner    string
+	retries  prometheus.Counter
 }
 
 var _ worker.Backend = (*Backend)(nil)
@@ -60,6 +63,8 @@ type Options struct {
 	Image string
 	// Network is the Docker network workers join; empty means Docker's default.
 	Network string
+	// CacheURL is the cache server workers use for actions/cache; empty keeps GitHub's.
+	CacheURL string
 	// Timeout is how long a worker may run before it is killed.
 	Timeout time.Duration
 	// Owner is the instance ID of this process, set on every container so the reaper can spot orphans.
@@ -75,7 +80,7 @@ func New(opts Options, logger *slog.Logger) *Backend {
 		m = metrics.NewMayfly(nil)
 	}
 	return &Backend{
-		eng: newSocketEngine(opts.Socket), image: opts.Image, network: opts.Network, cmd: []string{runnerCommand},
+		eng: newSocketEngine(opts.Socket), image: opts.Image, network: opts.Network, cacheURL: opts.CacheURL, cmd: []string{runnerCommand},
 		timeout: opts.Timeout, logger: logger, retry: retry.Default, owner: opts.Owner,
 		retries: m.Retries.WithLabelValues(metrics.OpWorkerStart),
 	}
@@ -140,6 +145,9 @@ func (b *Backend) containerSpec(spec worker.Spec) containerSpec {
 			LabelInstallationID: strconv.FormatInt(spec.InstallationID, 10),
 			LabelRunnerID:       strconv.FormatInt(spec.RunnerID, 10),
 		},
+	}
+	if b.cacheURL != "" {
+		cs.Env = append(cs.Env, envResultsURL+"="+b.cacheURL)
 	}
 	cs.HostConfig.AutoRemove = true
 	cs.HostConfig.NetworkMode = b.network
