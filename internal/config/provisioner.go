@@ -31,7 +31,10 @@ const (
 )
 
 // byteUnits are the size suffixes MAYFLY_WORKER_TMPFS_SIZE accepts.
-var byteUnits = map[byte]int64{'k': 1 << 10, 'm': 1 << 20, 'g': 1 << 30}
+var byteUnits = map[byte]int64{'k': kib, 'm': kib * kib, 'g': kib * kib * kib}
+
+// kib is one binary kilobyte, the step between the size units.
+const kib = 1024
 
 // ProvisionerConfig holds the settings of the provisioner component.
 type ProvisionerConfig struct {
