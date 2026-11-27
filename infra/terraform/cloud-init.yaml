@@ -57,6 +57,10 @@ write_files:
       } >"$DIR/.env"
 
       cd "$DIR"
+      # The cache service joins this external network, so it must exist before up. The bridge name
+      # is what the egress firewall matches, as when mayfly creates it.
+      docker network inspect mayfly-workers >/dev/null 2>&1 ||
+        docker network create --driver bridge -o com.docker.network.bridge.name=mayfly-workers mayfly-workers >/dev/null
       # Profiles come from COMPOSE_PROFILES in .env (cloud, plus cache when enabled).
       # Pull first: compose.yaml also has a build section, and the host has no source to build from.
       docker compose pull --quiet
