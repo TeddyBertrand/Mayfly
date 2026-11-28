@@ -55,4 +55,6 @@ With caching (M5, 2026-11-27, [details](docs/benchmarks.md#local-cache-server-of
 
 The local cache server ships in release 0.4.1. With it and the warm pool, Mayfly finished both workflows faster than hosted runners, and its times varied by 1s against 15s on hosted.
 
+Keeping each worker's scratch directories in memory (tmpfs, release 0.4.4, [details](docs/benchmarks.md#worker-tmpfs-of-2026-11-2728-azure)) saved about 1s per job, at the limit of the timestamps' resolution, for up to 247 MB of pinned memory per job. It stays an off-by-default option.
+
 **Status:** M1 core loop works: a `workflow_job` webhook starts a one-job Docker runner that is removed afterwards.

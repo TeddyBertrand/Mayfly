@@ -327,6 +327,50 @@ On both fresh hosts with `cache_enabled = true`, `compose up` failed: the `cache
 - **Isolation.** The server checks each job's token and scopes entries per repository and branch; that is the subject of #33 and was not tested here.
 - Two small workflows, one host size, one day.
 
+## Worker tmpfs of 2026-11-27/28 (Azure)
+
+The second M5 step (#36, decision 029): each worker keeps `_work`, `/tmp` and the Go and npm caches in memory under a 1500m budget, instead of overlayfs on the VM's disk. Measured with and without it, on top of the local cache and the warm pool, on all four workloads.
+
+| | |
+|---|---|
+| Host | the baseline's: Azure `Standard_B2als_v2` (2 vCPU AMD, 4 GB), Denmark East, `MAYFLY_WORKERS=1` |
+| tmpfs off | release `0.4.3`, `cache_enabled = true`, warm pool on the demo repo |
+| tmpfs on | release `0.4.4`, the same plus `worker_tmpfs_size = "1500m"`; changing it replaced the VM. 0.4.4 differs from 0.4.3 only by the `exec` mount option, which has no effect with tmpfs off |
+| Harness | `mayfly` only, `go-build,npm-test,go-build-cached,npm-test-cached`, 2 warm-up + 10 measured iterations per cell |
+| Memory | a script on the host read each worker's cgroup `memory.current` and the `shmem` line of `memory.stat` every second; the peak per container is used |
+| Runs | [off](../bench/results/2026-11-27-azure-tmpfs-off.md) ([CSV](../bench/results/2026-11-27-azure-tmpfs-off.csv), [memory](../bench/results/2026-11-27-azure-tmpfs-off-mem.log)) and [on](../bench/results/2026-11-28-azure-tmpfs-on.md) ([CSV](../bench/results/2026-11-28-azure-tmpfs-on.csv), [memory](../bench/results/2026-11-28-azure-tmpfs-on-mem.log)). 0 failed jobs out of 96, all 80 measured jobs on warm runners |
+
+### A first run that failed
+
+The first run with tmpfs, on 0.4.3, failed 40 of 40 jobs. Docker mounts tmpfs `noexec` by default, so `npm test` could not run `vitest` from `node_modules/.bin` and `go test` could not run its test binaries in `/tmp`. The local check before release had built a binary but never run one. The mounts now add `exec` (#166, release 0.4.4), which restores what the disk allowed; `nosuid` and `nodev` stay.
+
+### Results
+
+Medians, with the range of total time. Work is total minus first step.
+
+| workflow | total, off | total, on | work, off | work, on |
+|---|---|---|---|---|
+| go-build | 49s (49-50s) | 48s (47-48s) | 44s | 43.5s |
+| npm-test | 13.5s (12-22s) | 12s (12-13s) | 8.5s | 8s |
+| go-build-cached | 14s (13-14s) | 13s (12-13s) | 9s | 8s |
+| npm-test-cached | 13s (12-14s) | 12s (12-13s) | 8s | 8s |
+
+| Memory per worker (peak) | off | on |
+|---|---|---|
+| Total, median / max | 307 MB / 689 MB | 293 MB / 660 MB |
+| Shared memory (tmpfs), median / max | 44 MB / 45 MB | 176 MB / 247 MB |
+
+- **The gain is about 1s per job, at the limit of what the timestamps resolve.** Every cell moved down by 0-1.5s, mostly in the work, but timestamps have 1s resolution, so the claim is "up to about 1s", not a percentage.
+- **The page cache was already doing most of the work.** Without tmpfs, the files a job writes stay in memory too, and are counted in the container's memory, which is why the total peak barely changes. The disk was not the bottleneck on these workloads.
+- **What tmpfs changes is that the memory is pinned.** Page cache can be reclaimed under pressure; tmpfs pages cannot while the job runs. With tmpfs, up to 247 MB per job was held that way, within a 1.5 GB cap.
+- **Decision:** tmpfs stays an off-by-default option. It may pay on jobs that write much more, or on a slower disk, which these runs do not cover.
+
+### What this does not show
+
+- **Repeatability.** One run per setup, as for the cache. The differences are close to the noise floor, so a second run could move them by 1s either way.
+- **Heavier I/O.** Both workloads write tens to a few hundred MB. A large monorepo build or many parallel jobs could behave differently.
+- **Memory pressure.** With `MAYFLY_WORKERS=1` the host never ran short; the cost of pinned memory with several workers at once was not measured.
+
 ## Running it
 
 The harness dispatches workflows, which needs a token with Actions write on the demo repo. Your `gh` login has it; the GitHub App deliberately does not (read only), so the harness never uses App credentials.
