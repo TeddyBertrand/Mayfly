@@ -64,7 +64,7 @@ variable "app_id" {
 variable "mayfly_version" {
   description = "Release of ghcr.io/teddybertrand/mayfly to run; pinned so every rebuild runs the same code."
   type        = string
-  default     = "0.4.4"
+  default     = "0.4.5"
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.mayfly_version))
@@ -98,6 +98,12 @@ variable "worker_image" {
 
 variable "cache_enabled" {
   description = "Run the local actions/cache server and point workers at it (decision 028); needs mayfly_version 0.4.1 or later."
+  type        = bool
+  default     = false
+}
+
+variable "package_proxy_enabled" {
+  description = "Run the Go and npm package proxies and point workers at them (decision 030); needs mayfly_version 0.4.5 or later."
   type        = bool
   default     = false
 }

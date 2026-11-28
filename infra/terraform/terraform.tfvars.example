@@ -10,6 +10,9 @@ app_id           = "123456"
 # Local actions/cache server (off by default, decision 028).
 # cache_enabled = true
 
+# Go and npm package proxies for workers (off by default, decision 030).
+# package_proxy_enabled = true
+
 # Worker scratch directories in memory (off by default, decision 029); keep it well under the VM's RAM.
 # worker_tmpfs_size = "1500m"
 

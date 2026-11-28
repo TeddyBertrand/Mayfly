@@ -366,3 +366,18 @@ Each entry records one decision, the options considered and the consequences. En
   - Each job can hold up to the budget in RAM. A job that fills a mount fails with "no space left on device" instead of pushing the host out of memory.
   - Splitting the budget caps each directory at its share, so one directory can fill up while others are empty. Revisit the split if a workload hits it.
   - Idle warm runners cost nothing extra, since an empty tmpfs uses no memory.
+
+## 030. Athens and Verdaccio as package proxies for workers
+- **Date:** 2026-11-28
+- **Status:** accepted
+- **Context:** #35. A job whose `actions/cache` entry misses (new branch, changed lockfile, evicted entry) downloads every Go module and npm package from the internet again. A proxy on the host keeps everything it has served, across repositories and branches. #34 (registry mirror) was closed as not planned at the same time: workers have no Docker daemon (decision 015), so jobs never pull images.
+- **Options considered:**
+  - **A. Athens for Go and Verdaccio for npm, two Compose services:** standard tools, reached through the variables Go and npm already read (`GOPROXY`, `npm_config_registry`). Two more services: Athens used 18 MB and Verdaccio 144 MB in a local test.
+  - **B. Athens only:** one service where most of the download time is, but npm stays on the internet, against what #35 asks.
+  - **C. A generic HTTP caching proxy (Squid, nginx):** one service, but registries use HTTPS, so caching means intercepting TLS with a CA every worker trusts.
+- **Decision:** A, behind one switch, like the cache server (decision 028). Athens also proxies the Go checksum database, so module verification keeps working.
+- **Consequences:**
+  - Cache misses and uncached workflows fetch modules and packages from the host after their first download.
+  - Two more services hold memory (about 160 MB) and disk on the 4 GB host, and must be kept up to date.
+  - If a proxy is down, Go and npm fail instead of falling back to the internet, so jobs depend on it while the switch is on.
+  - Workflows that set their own `GOPROXY` or registry bypass the proxies.
