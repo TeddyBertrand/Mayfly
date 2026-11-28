@@ -339,9 +339,9 @@ Pull-through mirror for Docker Hub (and ghcr.io if useful) configured on the wor
 Go module proxy and npm/pip mirror (e.g. Athens or Verdaccio, or a caching proxy).
 - [ ] Dependency install time measured before and after
 
-### [worker] tmpfs for hot directories
+### **done** [worker] tmpfs for hot directories (#36)
 Mount `_work`, the Go build cache and `/tmp` on tmpfs, with a memory limit.
-- [ ] Measured gain and memory cost recorded
+- [x] Measured gain and memory cost recorded
 
 ### [bench] Benchmark: cache, mirror and tmpfs
 Update the table and compare against the 30-50% target versus hosted runners.
@@ -349,30 +349,30 @@ Update the table and compare against the 30-50% target versus hosted runners.
 
 ### **done** [infra] Create the worker network before the deploy starts (#156)
 With `cache_enabled = true`, a fresh host failed `compose up`: the `cache` service joins the external `mayfly-workers` network, which only mayfly created, at the first job. The deploy script now creates it first, with the bridge name the egress firewall matches.
-- [ ] A fresh host with `cache_enabled = true` deploys with no manual step
+- [x] A fresh host with `cache_enabled = true` deploys with no manual step
 - [x] The network keeps the `mayfly-workers` bridge name, so the egress firewall still applies
 
-### [ci] Release v0.4.4 (#168)
+### **done** [ci] Release v0.4.4 (#168)
 Publish v0.4.4 (decision 010) with the tmpfs fix of #166: the mounts allow exec, so jobs run with `worker_tmpfs_size` set. Moves the Terraform default `mayfly_version` to `0.4.4` to keep it aligned.
-- [ ] `VERSION` is `0.4.4` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.4.4` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.4.4` published for amd64 and arm64
-- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.4.4` published for amd64 and arm64, with the runner patch applied
-- [ ] `mayfly --version` in the image prints `0.4.4`
-- [ ] Terraform default `mayfly_version` is `0.4.4`
+- [x] `VERSION` is `0.4.4` on `dev` and merged into `main`
+- [x] GitHub Release `v0.4.4` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.4.4` published for amd64 and arm64
+- [x] `ghcr.io/teddybertrand/mayfly-worker:0.4.4` published for amd64 and arm64, with the runner patch applied
+- [x] `mayfly --version` in the image prints `0.4.4`
+- [x] Terraform default `mayfly_version` is `0.4.4`
 
 ### **done** [worker] tmpfs mounts are noexec, jobs cannot run binaries (#166)
 With tmpfs on (v0.4.3), every job failed: Docker mounts tmpfs `noexec` by default, so `node_modules/.bin` scripts and `go test` binaries could not run. The mounts now add `exec`; `nosuid` and `nodev` stay.
-- [ ] A job that runs a binary from `_work` and from `/tmp` passes with tmpfs on
+- [x] A job that runs a binary from `_work` and from `/tmp` passes with tmpfs on
 
-### [ci] Release v0.4.3 (#163)
+### **done** [ci] Release v0.4.3 (#163)
 Publish v0.4.3 (decision 010) with worker scratch directories on tmpfs (#36, decision 029), so the M5 benchmark measures it on a released version. Adds `MAYFLY_WORKER_TMPFS_SIZE` and the Terraform `worker_tmpfs_size`, off by default. Moves the Terraform default `mayfly_version` to `0.4.3` to keep it aligned.
-- [ ] `VERSION` is `0.4.3` on `dev` and merged into `main`
-- [ ] GitHub Release `v0.4.3` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
-- [ ] `ghcr.io/teddybertrand/mayfly:0.4.3` published for amd64 and arm64
-- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.4.3` published for amd64 and arm64, with the runner patch applied
-- [ ] `mayfly --version` in the image prints `0.4.3`
-- [ ] Terraform default `mayfly_version` is `0.4.3`
+- [x] `VERSION` is `0.4.3` on `dev` and merged into `main`
+- [x] GitHub Release `v0.4.3` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [x] `ghcr.io/teddybertrand/mayfly:0.4.3` published for amd64 and arm64
+- [x] `ghcr.io/teddybertrand/mayfly-worker:0.4.3` published for amd64 and arm64, with the runner patch applied
+- [x] `mayfly --version` in the image prints `0.4.3`
+- [x] Terraform default `mayfly_version` is `0.4.3`
 
 ### **done** [ci] Release v0.4.2 (#158)
 Publish v0.4.2 (decision 010) with the deploy fix of #156: the deploy script creates the `mayfly-workers` network before `compose up`, so a fresh host with `cache_enabled = true` deploys without a manual step. Moves the Terraform default `mayfly_version` to `0.4.2` to keep it aligned.
