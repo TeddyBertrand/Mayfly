@@ -309,6 +309,12 @@ func TestContainerSpec(t *testing.T) {
 	if got := b.containerSpec(testSpec).Env; !reflect.DeepEqual(got, wantEnv) {
 		t.Errorf("env = %v, want %v", got, wantEnv)
 	}
+
+	b.proxyEnv = proxyEnv(Options{GoProxyURL: "http://goproxy:3000/", NPMRegistryURL: "http://npm-proxy:4873/"})
+	wantEnv = append(wantEnv, "GOPROXY=http://goproxy:3000/", "npm_config_registry=http://npm-proxy:4873/")
+	if got := b.containerSpec(testSpec).Env; !reflect.DeepEqual(got, wantEnv) {
+		t.Errorf("env = %v, want %v", got, wantEnv)
+	}
 }
 
 // TestWorkerNetwork checks that a configured network is created once when missing, with a named bridge.

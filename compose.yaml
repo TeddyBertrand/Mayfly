@@ -48,6 +48,9 @@ services:
       MAYFLY_CACHE_URL: ${MAYFLY_CACHE_URL:-}
       # Memory budget for each worker's tmpfs mounts (decision 029), e.g. 1500m; empty keeps them on disk.
       MAYFLY_WORKER_TMPFS_SIZE: ${MAYFLY_WORKER_TMPFS_SIZE:-}
+      # Set to http://goproxy:3000/ and http://npm-proxy:4873/ with the proxy profile on; empty keeps the public ones.
+      MAYFLY_GO_PROXY_URL: ${MAYFLY_GO_PROXY_URL:-}
+      MAYFLY_NPM_REGISTRY_URL: ${MAYFLY_NPM_REGISTRY_URL:-}
     ports:
       - "${MAYFLY_PUBLISH:-127.0.0.1:8080}:8080"
     healthcheck:
@@ -117,6 +120,41 @@ services:
       - no-new-privileges:true
     cap_drop: [ALL]
     mem_limit: 512m
+
+  # Go module proxy for workers (decision 030), reached as http://goproxy:3000/; also proxies the checksum database.
+  goproxy:
+    profiles: [proxy]
+    image: gomods/athens:v0.20.0
+    restart: unless-stopped
+    environment:
+      ATHENS_STORAGE_TYPE: disk
+      ATHENS_DISK_STORAGE_ROOT: /var/lib/athens
+    volumes:
+      - goproxy_data:/var/lib/athens
+    networks: [workers]
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 256m
+
+  # npm registry proxy for workers (decision 030), reached as http://npm-proxy:4873/.
+  npm-proxy:
+    profiles: [proxy]
+    image: verdaccio/verdaccio:6.11.3
+    restart: unless-stopped
+    volumes:
+      - npm_proxy_data:/verdaccio/storage
+    networks: [workers]
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 256m
 
   # Dashboards from the repo; loopback only, reached on the VM through an SSH tunnel (decision 021).
   grafana:
@@ -203,6 +241,8 @@ volumes:
   grafana_data:
   classic_runner:
   cache_data:
+  goproxy_data:
+  npm_proxy_data:
 
 networks:
   # Created by mayfly on first use, or by scripts/classic-runner.sh; external so Compose never deletes it.

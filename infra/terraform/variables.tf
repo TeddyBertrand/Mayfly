@@ -102,6 +102,12 @@ variable "cache_enabled" {
   default     = false
 }
 
+variable "package_proxy_enabled" {
+  description = "Run the Go and npm package proxies and point workers at them (decision 030); needs mayfly_version 0.4.5 or later."
+  type        = bool
+  default     = false
+}
+
 variable "worker_tmpfs_size" {
   description = "Memory budget for each worker's tmpfs mounts (MAYFLY_WORKER_TMPFS_SIZE, decision 029), e.g. 1500m; empty keeps them on disk. Needs mayfly_version 0.4.3 or later."
   type        = string

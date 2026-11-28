@@ -24,10 +24,11 @@ const (
 	// repoSeparator splits MAYFLY_POOL_REPOS; ownerSeparator splits "owner/name".
 	repoSeparator  = ","
 	ownerSeparator = "/"
-	// schemeHTTP, schemeHTTPS and urlPathSeparator validate MAYFLY_CACHE_URL.
-	schemeHTTP       = "http"
-	schemeHTTPS      = "https"
-	urlPathSeparator = "/"
+	// schemeHTTP, schemeHTTPS, urlPathSeparator and goproxySeparators validate the service URLs.
+	schemeHTTP        = "http"
+	schemeHTTPS       = "https"
+	urlPathSeparator  = "/"
+	goproxySeparators = ",|"
 )
 
 // byteUnits are the size suffixes MAYFLY_WORKER_TMPFS_SIZE accepts.
@@ -55,6 +56,9 @@ type ProvisionerConfig struct {
 	CacheURL string
 	// TmpfsBytes is the memory budget for the workers' tmpfs mounts (decision 029); 0 keeps them on disk.
 	TmpfsBytes int64
+	// GoProxyURL and NPMRegistryURL are the package proxies workers download from (decision 030); empty keeps the public ones.
+	GoProxyURL     string
+	NPMRegistryURL string
 }
 
 // LoadProvisioner reads the provisioner settings through getenv and readFile, applying defaults
@@ -98,8 +102,14 @@ func LoadProvisioner(getenv func(string) string, readFile func(string) ([]byte, 
 	if cfg.PoolIdleTimeout >= cfg.WorkerTimeout {
 		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_POOL_IDLE_TIMEOUT: must be shorter than MAYFLY_WORKER_TIMEOUT (%s), got %s", cfg.WorkerTimeout, cfg.PoolIdleTimeout)
 	}
-	if cfg.CacheURL, err = parseCacheURL(getenv("MAYFLY_CACHE_URL")); err != nil {
+	if cfg.CacheURL, err = parseServiceURL(getenv("MAYFLY_CACHE_URL")); err != nil {
 		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_CACHE_URL: %w", err)
+	}
+	if cfg.GoProxyURL, err = parseServiceURL(getenv("MAYFLY_GO_PROXY_URL")); err != nil {
+		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_GO_PROXY_URL: %w", err)
+	}
+	if cfg.NPMRegistryURL, err = parseServiceURL(getenv("MAYFLY_NPM_REGISTRY_URL")); err != nil {
+		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_NPM_REGISTRY_URL: %w", err)
 	}
 	if cfg.TmpfsBytes, err = parseByteSize(getenv("MAYFLY_WORKER_TMPFS_SIZE")); err != nil {
 		return ProvisionerConfig{}, fmt.Errorf("MAYFLY_WORKER_TMPFS_SIZE: %w", err)
@@ -124,9 +134,9 @@ func parseByteSize(v string) (int64, error) {
 	return n * mult, nil
 }
 
-// parseCacheURL checks that v is an absolute http(s) URL with no query, and returns it with
+// parseServiceURL checks that v is an absolute http(s) URL with no query, and returns it with
 // a trailing slash. An empty v returns "".
-func parseCacheURL(v string) (string, error) {
+func parseServiceURL(v string) (string, error) {
 	if v == "" {
 		return "", nil
 	}
@@ -134,10 +144,12 @@ func parseCacheURL(v string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+	// GOPROXY reads commas and pipes as list separators, so one URL must not hold them.
+	if (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Host == "" || u.RawQuery != "" || u.Fragment != "" ||
+		strings.ContainsAny(v, goproxySeparators) {
 		return "", fmt.Errorf("must be an http(s) URL with a host and no query, got %q", v)
 	}
-	// actions/cache joins paths onto it, and the cache server requires the trailing slash.
+	// actions/cache joins paths onto it and the cache server requires the slash; Go and npm accept it.
 	if !strings.HasSuffix(v, urlPathSeparator) {
 		v += urlPathSeparator
 	}
