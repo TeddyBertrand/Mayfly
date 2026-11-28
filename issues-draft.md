@@ -352,6 +352,10 @@ With `cache_enabled = true`, a fresh host failed `compose up`: the `cache` servi
 - [ ] A fresh host with `cache_enabled = true` deploys with no manual step
 - [x] The network keeps the `mayfly-workers` bridge name, so the egress firewall still applies
 
+### **done** [worker] tmpfs mounts are noexec, jobs cannot run binaries (#166)
+With tmpfs on (v0.4.3), every job failed: Docker mounts tmpfs `noexec` by default, so `node_modules/.bin` scripts and `go test` binaries could not run. The mounts now add `exec`; `nosuid` and `nodev` stay.
+- [ ] A job that runs a binary from `_work` and from `/tmp` passes with tmpfs on
+
 ### [ci] Release v0.4.3 (#163)
 Publish v0.4.3 (decision 010) with worker scratch directories on tmpfs (#36, decision 029), so the M5 benchmark measures it on a released version. Adds `MAYFLY_WORKER_TMPFS_SIZE` and the Terraform `worker_tmpfs_size`, off by default. Moves the Terraform default `mayfly_version` to `0.4.3` to keep it aligned.
 - [ ] `VERSION` is `0.4.3` on `dev` and merged into `main`

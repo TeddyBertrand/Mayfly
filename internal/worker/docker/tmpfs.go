@@ -46,7 +46,8 @@ func tmpfsSpec(total int64) (map[string]string, []string) {
 	mounts := make(map[string]string, len(tmpfsMounts))
 	var env []string
 	for _, m := range tmpfsMounts {
-		mounts[m.Path] = fmt.Sprintf("size=%d,mode=%s,uid=%d,gid=%d", total/shares*m.Shares, m.Mode, runnerUID, runnerGID)
+		// Docker defaults tmpfs to noexec, which breaks node_modules/.bin and go test binaries.
+		mounts[m.Path] = fmt.Sprintf("size=%d,mode=%s,uid=%d,gid=%d,exec", total/shares*m.Shares, m.Mode, runnerUID, runnerGID)
 		if m.Env != "" {
 			env = append(env, m.Env+"="+m.Path)
 		}
