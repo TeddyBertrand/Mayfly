@@ -23,6 +23,9 @@ const (
 	envJITConfig = "ACTIONS_RUNNER_INPUT_JITCONFIG"
 	// envResultsURL points actions/cache at the cache server; only the patched runner keeps it (decision 028).
 	envResultsURL = "ACTIONS_RESULTS_URL"
+	// envGoProxy and envNPMRegistry point Go and npm at the package proxies (decision 030).
+	envGoProxy     = "GOPROXY"
+	envNPMRegistry = "npm_config_registry"
 )
 
 const (
@@ -46,6 +49,7 @@ type Backend struct {
 	network  string
 	cacheURL string
 	tmpfs    int64
+	proxyEnv []string
 	cmd      []string
 	timeout  time.Duration
 	logger   *slog.Logger
@@ -68,6 +72,9 @@ type Options struct {
 	CacheURL string
 	// TmpfsBytes is the memory budget of the worker's tmpfs mounts; 0 keeps them on disk.
 	TmpfsBytes int64
+	// GoProxyURL and NPMRegistryURL are the package proxies workers use; empty keeps the public ones.
+	GoProxyURL     string
+	NPMRegistryURL string
 	// Timeout is how long a worker may run before it is killed.
 	Timeout time.Duration
 	// Owner is the instance ID of this process, set on every container so the reaper can spot orphans.
@@ -83,10 +90,22 @@ func New(opts Options, logger *slog.Logger) *Backend {
 		m = metrics.NewMayfly(nil)
 	}
 	return &Backend{
-		eng: newSocketEngine(opts.Socket), image: opts.Image, network: opts.Network, cacheURL: opts.CacheURL, tmpfs: opts.TmpfsBytes, cmd: []string{runnerCommand},
+		eng: newSocketEngine(opts.Socket), image: opts.Image, network: opts.Network, cacheURL: opts.CacheURL, tmpfs: opts.TmpfsBytes, proxyEnv: proxyEnv(opts), cmd: []string{runnerCommand},
 		timeout: opts.Timeout, logger: logger, retry: retry.Default, owner: opts.Owner,
 		retries: m.Retries.WithLabelValues(metrics.OpWorkerStart),
 	}
+}
+
+// proxyEnv returns the variables that point Go and npm at the configured package proxies.
+func proxyEnv(opts Options) []string {
+	var env []string
+	if opts.GoProxyURL != "" {
+		env = append(env, envGoProxy+"="+opts.GoProxyURL)
+	}
+	if opts.NPMRegistryURL != "" {
+		env = append(env, envNPMRegistry+"="+opts.NPMRegistryURL)
+	}
+	return env
 }
 
 // Run starts a runner container for spec, waits for it to finish, and always removes it.
@@ -155,6 +174,7 @@ func (b *Backend) containerSpec(spec worker.Spec) containerSpec {
 	var tmpfsEnv []string
 	cs.HostConfig.Tmpfs, tmpfsEnv = tmpfsSpec(b.tmpfs)
 	cs.Env = append(cs.Env, tmpfsEnv...)
+	cs.Env = append(cs.Env, b.proxyEnv...)
 	cs.HostConfig.AutoRemove = true
 	cs.HostConfig.NetworkMode = b.network
 	return cs

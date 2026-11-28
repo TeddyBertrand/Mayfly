@@ -72,6 +72,7 @@ func run(logger *slog.Logger) error {
 	backend := docker.New(docker.Options{
 		Socket: pcfg.Docker.Socket, Image: pcfg.WorkerImage, Network: pcfg.WorkerNetwork,
 		CacheURL: pcfg.CacheURL, TmpfsBytes: pcfg.TmpfsBytes,
+		GoProxyURL: pcfg.GoProxyURL, NPMRegistryURL: pcfg.NPMRegistryURL,
 		Timeout: pcfg.WorkerTimeout, Owner: instance, Metrics: m,
 	}, logger)
 	prov := provisioner.New(gh, backend, provisioner.Options{
