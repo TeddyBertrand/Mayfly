@@ -11,11 +11,11 @@ func TestTmpfsSpecSplitsBudget(t *testing.T) {
 	mounts, env := tmpfsSpec(1500 << 20)
 	share := int64(1500<<20) / 6
 	want := map[string]string{
-		"/home/runner/_work": "size=" + itoa(2*share) + ",mode=0755,uid=1001,gid=1001",
-		"/tmp":               "size=" + itoa(share) + ",mode=1777,uid=1001,gid=1001",
-		"/mayfly/go-build":   "size=" + itoa(share) + ",mode=0755,uid=1001,gid=1001",
-		"/mayfly/go-mod":     "size=" + itoa(share) + ",mode=0755,uid=1001,gid=1001",
-		"/mayfly/npm":        "size=" + itoa(share) + ",mode=0755,uid=1001,gid=1001",
+		"/home/runner/_work": "size=" + itoa(2*share) + ",mode=0755,uid=1001,gid=1001,exec",
+		"/tmp":               "size=" + itoa(share) + ",mode=1777,uid=1001,gid=1001,exec",
+		"/mayfly/go-build":   "size=" + itoa(share) + ",mode=0755,uid=1001,gid=1001,exec",
+		"/mayfly/go-mod":     "size=" + itoa(share) + ",mode=0755,uid=1001,gid=1001,exec",
+		"/mayfly/npm":        "size=" + itoa(share) + ",mode=0755,uid=1001,gid=1001,exec",
 	}
 	if !reflect.DeepEqual(mounts, want) {
 		t.Errorf("mounts = %v, want %v", mounts, want)
