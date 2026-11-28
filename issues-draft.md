@@ -352,6 +352,15 @@ With `cache_enabled = true`, a fresh host failed `compose up`: the `cache` servi
 - [x] A fresh host with `cache_enabled = true` deploys with no manual step
 - [x] The network keeps the `mayfly-workers` bridge name, so the egress firewall still applies
 
+### [ci] Release v0.4.5 (#173)
+Publish v0.4.5 (decision 010) with the Go and npm package proxies (#35, decision 030), so the final M5 benchmark (#37) measures the complete stack on a released version. Adds `MAYFLY_GO_PROXY_URL`, `MAYFLY_NPM_REGISTRY_URL`, the `proxy` Compose profile and the Terraform `package_proxy_enabled` switch, off by default. Moves the Terraform default `mayfly_version` to `0.4.5` to keep it aligned.
+- [ ] `VERSION` is `0.4.5` on `dev` and merged into `main`
+- [ ] GitHub Release `v0.4.5` with `mayfly` binaries for linux/amd64 and linux/arm64 plus `SHA256SUMS`
+- [ ] `ghcr.io/teddybertrand/mayfly:0.4.5` published for amd64 and arm64
+- [ ] `ghcr.io/teddybertrand/mayfly-worker:0.4.5` published for amd64 and arm64, with the runner patch applied
+- [ ] `mayfly --version` in the image prints `0.4.5`
+- [ ] Terraform default `mayfly_version` is `0.4.5`
+
 ### **done** [ci] Release v0.4.4 (#168)
 Publish v0.4.4 (decision 010) with the tmpfs fix of #166: the mounts allow exec, so jobs run with `worker_tmpfs_size` set. Moves the Terraform default `mayfly_version` to `0.4.4` to keep it aligned.
 - [x] `VERSION` is `0.4.4` on `dev` and merged into `main`
